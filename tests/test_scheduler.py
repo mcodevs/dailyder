@@ -12,6 +12,17 @@ class _FakeAccessService:
     async def get_bound_group_id(self):
         return -100123
 
+    async def get_group_binding(self):
+        return object()
+
+
+class _FakeBindingAccessService:
+    def __init__(self, binding_present: bool = True) -> None:
+        self.binding_present = binding_present
+
+    async def get_group_binding(self):
+        return object() if self.binding_present else None
+
 
 class _FakeDigestService:
     def __init__(self) -> None:

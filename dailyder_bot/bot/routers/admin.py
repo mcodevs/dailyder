@@ -17,13 +17,19 @@ async def handle_bind_group(message: Message, app_context: AppContext) -> None:
     if message.from_user is None or not app_context.access_service.is_admin(message.from_user.id):
         await message.reply(texts.admin_only_text())
         return
-    await app_context.admin_service.bind_group(
+    await app_context.admin_service.bind_group_with_topic(
         admin_user_id=message.from_user.id,
         chat_id=message.chat.id,
         title=message.chat.title or str(message.chat.id),
+        message_thread_id=message.message_thread_id,
         now=local_now(app_context.settings.timezone_info),
     )
-    await message.reply("Guruh muvaffaqiyatli biriktirildi.")
+    if message.message_thread_id is not None:
+        await message.reply(
+            f"Topic muvaffaqiyatli biriktirildi. Thread ID: {message.message_thread_id}"
+        )
+    else:
+        await message.reply("Guruh muvaffaqiyatli biriktirildi.")
 
 
 @router.message(Command("admin"), F.chat.type == "private")

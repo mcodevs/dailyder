@@ -32,14 +32,28 @@ class AdminService:
         self.reminder_service = reminder_service
 
     async def bind_group(self, admin_user_id: int, chat_id: int, title: str, now: datetime) -> None:
+        await self.bind_group_with_topic(admin_user_id, chat_id, title, None, now)
+
+    async def bind_group_with_topic(
+        self,
+        admin_user_id: int,
+        chat_id: int,
+        title: str,
+        message_thread_id: int | None,
+        now: datetime,
+    ) -> None:
         async with self.db.session() as session:
             async with session.begin():
                 settings_repo = AppSettingsRepository(session)
-                await settings_repo.set_group_binding(chat_id, title)
+                await settings_repo.set_group_binding(chat_id, title, message_thread_id)
                 await AdminAuditRepository(session).log(
                     admin_telegram_user_id=admin_user_id,
                     action="bind_group",
-                    payload={"chat_id": chat_id, "title": title},
+                    payload={
+                        "chat_id": chat_id,
+                        "title": title,
+                        "message_thread_id": message_thread_id,
+                    },
                     created_at=now,
                 )
 
@@ -47,14 +61,22 @@ class AdminService:
         async with self.db.session() as session:
             settings_repo = AppSettingsRepository(session)
             user_repo = UserRepository(session)
-            group_id = await settings_repo.get_group_chat_id() or self.settings.group_chat_id
-            group_title = await settings_repo.get_group_title()
+            binding = await settings_repo.get_group_binding()
+            if binding is None and self.settings.group_chat_id is not None:
+                from dailyder_bot.repositories.app_settings import GroupBinding
+
+                binding = GroupBinding(chat_id=self.settings.group_chat_id, title=None, message_thread_id=None)
             user_count = await user_repo.count_active()
 
         lines = [
             "<b>Bot holati</b>",
-            f"Group binding: {'bor' if group_id else 'yoʻq'}",
-            f"Guruh: {group_title or group_id or 'biriktirilmagan'}",
+            f"Group binding: {'bor' if binding else 'yoʻq'}",
+            f"Guruh: {binding.title or binding.chat_id if binding else 'biriktirilmagan'}",
+            (
+                f"Topic: {binding.message_thread_id}"
+                if binding and binding.message_thread_id is not None
+                else "Topic: butun guruh"
+            ),
             f"Adminlar: {len(self.settings.admin_user_ids)} ta",
             f"Onboarded developerlar: {user_count} ta",
             f"AM scheduler: {self.settings.am_reminder_time}",

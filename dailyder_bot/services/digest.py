@@ -32,27 +32,31 @@ class DigestService:
 
     async def ensure_digest(self, work_date: date, period: DigestPeriod) -> None:
         async with self._locks[(work_date, period)]:
-            group_chat_id = await self.access_service.require_bound_group_id()
+            binding = await self.access_service.require_group_binding()
             async with self.db.session() as session:
                 async with session.begin():
                     digest_repo = DigestRepository(session)
                     digest = await digest_repo.get_or_create(
                         work_date=work_date,
                         period=period,
-                        group_chat_id=group_chat_id,
+                        group_chat_id=binding.chat_id,
                     )
 
             text_value = await self._render_text(work_date, period)
             if digest.message_id is None:
-                sent = await self.bot.send_message(chat_id=group_chat_id, text=text_value)
+                sent = await self.bot.send_message(
+                    chat_id=binding.chat_id,
+                    text=text_value,
+                    message_thread_id=binding.message_thread_id,
+                )
                 async with self.db.session() as session:
                     async with session.begin():
                         digest_repo = DigestRepository(session)
-                        digest = await digest_repo.get_or_create(work_date, period, group_chat_id)
+                        digest = await digest_repo.get_or_create(work_date, period, binding.chat_id)
                         await digest_repo.set_message_id(digest, sent.message_id)
                 return
 
-            await self._edit_message(group_chat_id, digest.message_id, text_value)
+            await self._edit_message(binding.chat_id, digest.message_id, text_value)
 
     async def refresh_digest(self, work_date: date, period: DigestPeriod) -> None:
         await self.ensure_digest(work_date, period)
