@@ -1,38 +1,23 @@
-app = "dailyder-bot"
-primary_region = "sin"
-kill_signal = "SIGINT"
-kill_timeout = "5s"
+# fly.toml app configuration file generated for app-purple-breeze-3974 on 2026-03-12T13:05:02Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'app-purple-breeze-3974'
+primary_region = 'iad'
 
 [build]
-dockerfile = "Dockerfile"
-
-[env]
-PORT = "8080"
-TIMEZONE = "Asia/Tashkent"
-AM_REMINDER_TIME = "09:00"
-PM_REMINDER_TIME = "17:00"
-HASHTAG = "daily"
-
-[deploy]
-release_command = "python -m dailyder_bot.db.migrate"
 
 [http_service]
-internal_port = 8080
-force_https = false
-auto_stop_machines = false
-auto_start_machines = true
-min_machines_running = 1
-processes = ["app"]
-
-  [[http_service.checks]]
-  interval = "15s"
-  timeout = "5s"
-  grace_period = "20s"
-  method = "GET"
-  path = "/healthz"
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
 
 [[vm]]
-memory = "512mb"
-cpu_kind = "shared"
-cpus = 1
-
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
