@@ -1,38 +1,42 @@
-app = "dailyder-bot"
-primary_region = "sin"
-kill_signal = "SIGINT"
-kill_timeout = "5s"
+# fly.toml app configuration file generated for dailyder-bot on 2026-03-12T18:06:54+05:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'dailyder-bot'
+primary_region = 'sin'
+kill_signal = 'SIGINT'
+kill_timeout = '5s'
 
 [build]
-dockerfile = "Dockerfile"
-
-[env]
-PORT = "8080"
-TIMEZONE = "Asia/Tashkent"
-AM_REMINDER_TIME = "09:00"
-PM_REMINDER_TIME = "17:00"
-HASHTAG = "daily"
+  dockerfile = 'Dockerfile'
 
 [deploy]
-release_command = "python -m dailyder_bot.db.migrate"
+  release_command = 'python -m dailyder_bot.db.migrate'
+
+[env]
+  AM_REMINDER_TIME = '09:00'
+  HASHTAG = 'daily'
+  PM_REMINDER_TIME = '17:00'
+  PORT = '8080'
+  TIMEZONE = 'Asia/Tashkent'
 
 [http_service]
-internal_port = 8080
-force_https = false
-auto_stop_machines = false
-auto_start_machines = true
-min_machines_running = 1
-processes = ["app"]
+  internal_port = 8080
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
 
   [[http_service.checks]]
-  interval = "15s"
-  timeout = "5s"
-  grace_period = "20s"
-  method = "GET"
-  path = "/healthz"
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/healthz'
 
 [[vm]]
-memory = "512mb"
-cpu_kind = "shared"
-cpus = 1
-
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
