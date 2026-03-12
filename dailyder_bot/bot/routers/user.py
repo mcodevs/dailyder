@@ -82,6 +82,29 @@ async def handle_today_callback(
     await _start_morning_flow(callback.message, state, bot, app_context, callback.from_user.id)
 
 
+@router.message(Command("update"))
+async def handle_update_command(
+    message: Message,
+    state: FSMContext,
+    bot: Bot,
+    app_context: AppContext,
+) -> None:
+    await _start_pm_flow(message, state, bot, app_context)
+
+
+@router.callback_query(ActionCallback.filter(F.name == "update"))
+async def handle_update_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+    bot: Bot,
+    app_context: AppContext,
+) -> None:
+    await callback.answer()
+    if callback.message is None or callback.from_user is None:
+        return
+    await _start_pm_flow(callback.message, state, bot, app_context, callback.from_user.id)
+
+
 @router.message(MorningSubmissionState.waiting_for_text)
 async def handle_morning_submission(
     message: Message,
@@ -120,29 +143,6 @@ async def handle_morning_submission(
     await app_context.digest_service.refresh_digest(work_date, DigestPeriod.AM)
     await state.clear()
     await message.answer(texts.morning_submission_saved_text(len(submission.items)))
-
-
-@router.message(Command("update"))
-async def handle_update_command(
-    message: Message,
-    state: FSMContext,
-    bot: Bot,
-    app_context: AppContext,
-) -> None:
-    await _start_pm_flow(message, state, bot, app_context)
-
-
-@router.callback_query(ActionCallback.filter(F.name == "update"))
-async def handle_update_callback(
-    callback: CallbackQuery,
-    state: FSMContext,
-    bot: Bot,
-    app_context: AppContext,
-) -> None:
-    await callback.answer()
-    if callback.message is None or callback.from_user is None:
-        return
-    await _start_pm_flow(callback.message, state, bot, app_context, callback.from_user.id)
 
 
 @router.callback_query(EveningUpdateState.choosing_status, ItemStatusCallback.filter())
