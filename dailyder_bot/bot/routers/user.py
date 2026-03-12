@@ -181,7 +181,7 @@ async def handle_status_choice(
             texts.pm_item_prompt_parts(
                 project_name=next_item["project_name"],
                 task_name=next_item["task_name"],
-                subtask_name=next_item.get("subtask_name"),
+                subtask_names=next_item.get("subtask_names"),
                 position=cursor + 1,
                 total=len(items),
             ),
@@ -291,7 +291,7 @@ async def _start_pm_flow(
             "id": item.id,
             "project_name": item.project_name,
             "task_name": item.task_name,
-            "subtask_name": item.subtask_name,
+            "subtask_names": item.subtask_names,
         }
         for item in submission.items
     ]
@@ -310,7 +310,7 @@ async def _start_pm_flow(
         texts.pm_item_prompt_parts(
             project_name=first_item["project_name"],
             task_name=first_item["task_name"],
-            subtask_name=first_item.get("subtask_name"),
+            subtask_names=first_item.get("subtask_names"),
             position=1,
             total=len(items),
         ),

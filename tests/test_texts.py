@@ -71,7 +71,7 @@ def test_render_pm_digest_contains_status_emoji_and_note() -> None:
         sort_order=1,
         project_name="MedPay",
         task_name="Release",
-        subtask_name="AppStore",
+        subtask_name="AppStore\nSmoke test",
     )
     item.status = SubmissionItemStatus(id="st2", submission_item_id="i2", status="completed")
     submission.items = [item]
@@ -81,5 +81,7 @@ def test_render_pm_digest_contains_status_emoji_and_note() -> None:
     assert "PM digest" in rendered
     assert "✅" in rendered
     assert "MedPay" in rendered
+    assert "Release ✅" in rendered
     assert "Izoh" in rendered
-
+    assert "AppStore" in rendered
+    assert "Smoke test" in rendered

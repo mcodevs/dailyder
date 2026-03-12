@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     def parse_admin_user_ids(cls, value: Any) -> tuple[int, ...]:
         if value in (None, "", ()):
             return ()
+        if isinstance(value, int):
+            return (value,)
         if isinstance(value, tuple):
             return value
         if isinstance(value, list):
@@ -39,6 +41,13 @@ class Settings(BaseSettings):
             parts = [item.strip() for item in value.split(",") if item.strip()]
             return tuple(int(item) for item in parts)
         raise TypeError("ADMIN_USER_IDS format is invalid")
+
+    @field_validator("group_chat_id", mode="before")
+    @classmethod
+    def parse_group_chat_id(cls, value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        return int(value)
 
     @property
     def timezone_info(self) -> ZoneInfo:

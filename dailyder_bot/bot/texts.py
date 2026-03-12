@@ -27,11 +27,15 @@ def help_text() -> str:
         "2. Kechqurun /update orqali har bir vazifaga status tanlaysiz.\n"
         "3. Bot digest xabarlarini guruhga joylab boradi.\n\n"
         "<b>Morning format</b>\n"
-        "Har blok alohida bo'lsin:\n"
+        "Bitta loyiha ostida bir nechta task yozishingiz mumkin:\n"
         "Project: TvRain\n"
         "Task: IOS bug fix\n"
-        "Subtask: iphone vs ipad\n\n"
-        "Subtask ixtiyoriy."
+        "Subtask: iphone bug\n"
+        "Subtask: ipad bug\n\n"
+        "Task: Release\n\n"
+        "Project: AnorDelivery\n"
+        "Task: Activate credit\n\n"
+        "Subtask ixtiyoriy va bir nechta bo'lishi mumkin."
     )
 
 
@@ -55,9 +59,11 @@ def morning_template_text(work_date, hashtag: str, mention_html: str) -> str:
         "Quyidagi formatda yuboring:\n\n"
         "Project: TvRain\n"
         "Task: IOS bug fix\n"
-        "Subtask: iphone vs ipad\n\n"
-        "Project: AnorDelivery\n"
+        "Subtask: iphone bug\n"
+        "Subtask: ipad bug\n\n"
         "Task: Release\n\n"
+        "Project: AnorDelivery\n"
+        "Task: Activate credit\n\n"
         "Faqat `Project`, `Task`, `Subtask(optional)` satrlarini yozing."
     )
 
@@ -104,7 +110,7 @@ def pm_item_prompt(item: SubmissionItem, position: int, total: int) -> str:
     return pm_item_prompt_parts(
         project_name=item.project_name,
         task_name=item.task_name,
-        subtask_name=item.subtask_name,
+        subtask_names=item.subtask_names,
         position=position,
         total=total,
     )
@@ -114,7 +120,7 @@ def pm_item_prompt_parts(
     *,
     project_name: str,
     task_name: str,
-    subtask_name: str | None,
+    subtask_names: list[str] | None,
     position: int,
     total: int,
 ) -> str:
@@ -123,7 +129,7 @@ def pm_item_prompt_parts(
         f"Project: <b>{escape(project_name)}</b>",
         f"Task: {escape(task_name)}",
     ]
-    if subtask_name:
+    for subtask_name in subtask_names or []:
         lines.append(f"Subtask: {escape(subtask_name)}")
     lines.append("")
     lines.append("Statusni tanlang:")
@@ -193,8 +199,8 @@ def _render_am_items(items: list[SubmissionItem]) -> list[str]:
     lines: list[str] = []
     for item in items:
         lines.append(f"   • <b>{escape(item.project_name)}</b> — {escape(item.task_name)}")
-        if item.subtask_name:
-            lines.append(f"     - {escape(item.subtask_name)}")
+        for subtask_name in item.subtask_names:
+            lines.append(f"     - {escape(subtask_name)}")
     return lines
 
 
@@ -203,8 +209,8 @@ def _render_pm_items(items: list[SubmissionItem]) -> list[str]:
     for item in items:
         emoji = ItemStatus(item.status.status).emoji if item.status else "•"
         lines.append(
-            f"   {emoji} <b>{escape(item.project_name)}</b> — {escape(item.task_name)}"
+            f"   <b>{escape(item.project_name)}</b> — {escape(item.task_name)} {emoji}"
         )
-        if item.subtask_name:
-            lines.append(f"     - {escape(item.subtask_name)}")
+        for subtask_name in item.subtask_names:
+            lines.append(f"     - {escape(subtask_name)}")
     return lines

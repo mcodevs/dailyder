@@ -92,8 +92,8 @@ class SubmissionRepository:
                 sort_order=sort_order,
                 project_name=item.project_name,
                 task_name=item.task_name,
-                subtask_name=item.subtask_name,
             )
+            submission_item.subtask_names = item.subtask_names
             self.session.add(submission_item)
 
         await self.session.flush()

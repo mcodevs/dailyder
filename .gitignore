@@ -3,9 +3,11 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.postgres-data/
+.postgres.log
+*.egg-info/
 *.pyc
 *.pyo
 *.pyd
 .DS_Store
 .env
-

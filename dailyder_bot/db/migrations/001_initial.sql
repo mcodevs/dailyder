@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS submission_items (
     sort_order INTEGER NOT NULL,
     project_name VARCHAR(255) NOT NULL,
     task_name VARCHAR(500) NOT NULL,
-    subtask_name VARCHAR(500),
+    subtask_name TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

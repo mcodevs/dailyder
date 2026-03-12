@@ -84,7 +84,7 @@ class SubmissionItem(Base, TimestampMixin):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
     project_name: Mapped[str] = mapped_column(String(255), nullable=False)
     task_name: Mapped[str] = mapped_column(String(500), nullable=False)
-    subtask_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    subtask_name: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     submission: Mapped["DailySubmission"] = relationship(back_populates="items")
     status: Mapped["SubmissionItemStatus | None"] = relationship(
@@ -92,6 +92,17 @@ class SubmissionItem(Base, TimestampMixin):
         cascade="all, delete-orphan",
         uselist=False,
     )
+
+    @property
+    def subtask_names(self) -> list[str]:
+        if not self.subtask_name:
+            return []
+        return [item for item in self.subtask_name.split("\n") if item]
+
+    @subtask_names.setter
+    def subtask_names(self, values: list[str]) -> None:
+        cleaned = [value.strip() for value in values if value and value.strip()]
+        self.subtask_name = "\n".join(cleaned) if cleaned else None
 
 
 class SubmissionItemStatus(Base, TimestampMixin):
@@ -120,4 +131,3 @@ class AdminAuditLog(Base):
         DateTime(timezone=True),
         nullable=False,
     )
-
