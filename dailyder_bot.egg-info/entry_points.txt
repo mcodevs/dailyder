@@ -1,0 +1,3 @@
+[console_scripts]
+dailyder-bot = dailyder_bot.__main__:main
+dailyder-migrate = dailyder_bot.db.migrate:main

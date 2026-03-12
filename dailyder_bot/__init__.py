@@ -1,0 +1,2 @@
+"""Dailyder Telegram bot package."""
+

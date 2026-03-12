@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+
+from dailyder_bot.config.settings import Settings
+from dailyder_bot.db.session import DatabaseSessionManager
+from dailyder_bot.repositories.admin_audit import AdminAuditRepository
+from dailyder_bot.repositories.app_settings import AppSettingsRepository
+from dailyder_bot.repositories.digests import DigestRepository
+from dailyder_bot.repositories.submissions import SubmissionRepository
+from dailyder_bot.repositories.users import UserRepository
+from dailyder_bot.services.access import AccessService
+from dailyder_bot.services.metrics import MetricsService
+from dailyder_bot.services.reminders import ReminderService
+from dailyder_bot.utils.dates import format_uz_date
+from dailyder_bot.utils.telegram import user_mention_html
+
+
+class AdminService:
+    def __init__(
+        self,
+        settings: Settings,
+        db: DatabaseSessionManager,
+        access_service: AccessService,
+        metrics_service: MetricsService,
+        reminder_service: ReminderService,
+    ) -> None:
+        self.settings = settings
+        self.db = db
+        self.access_service = access_service
+        self.metrics_service = metrics_service
+        self.reminder_service = reminder_service
+
+    async def bind_group(self, admin_user_id: int, chat_id: int, title: str, now: datetime) -> None:
+        async with self.db.session() as session:
+            async with session.begin():
+                settings_repo = AppSettingsRepository(session)
+                await settings_repo.set_group_binding(chat_id, title)
+                await AdminAuditRepository(session).log(
+                    admin_telegram_user_id=admin_user_id,
+                    action="bind_group",
+                    payload={"chat_id": chat_id, "title": title},
+                    created_at=now,
+                )
+
+    async def readiness_report(self) -> str:
+        async with self.db.session() as session:
+            settings_repo = AppSettingsRepository(session)
+            user_repo = UserRepository(session)
+            group_id = await settings_repo.get_group_chat_id() or self.settings.group_chat_id
+            group_title = await settings_repo.get_group_title()
+            user_count = await user_repo.count_active()
+
+        lines = [
+            "<b>Bot holati</b>",
+            f"Group binding: {'bor' if group_id else 'yoʻq'}",
+            f"Guruh: {group_title or group_id or 'biriktirilmagan'}",
+            f"Adminlar: {len(self.settings.admin_user_ids)} ta",
+            f"Onboarded developerlar: {user_count} ta",
+            f"AM scheduler: {self.settings.am_reminder_time}",
+            f"PM scheduler: {self.settings.pm_reminder_time}",
+        ]
+        return "\n".join(lines)
+
+    async def pending_report(self, work_date: date) -> str:
+        async with self.db.session() as session:
+            user_repo = UserRepository(session)
+            submission_repo = SubmissionRepository(session)
+            users = await user_repo.list_active()
+            submissions = await submission_repo.list_for_window(work_date, work_date)
+
+        submission_lookup = {submission.user.telegram_user_id: submission for submission in submissions}
+        am_pending: list[str] = []
+        pm_pending: list[str] = []
+
+        for user in users:
+            submission = submission_lookup.get(user.telegram_user_id)
+            if submission is None or submission.am_submitted_at is None:
+                am_pending.append(user_mention_html(user))
+                continue
+            if submission.pm_submitted_at is None:
+                pm_pending.append(user_mention_html(user))
+
+        return "\n".join(
+            [
+                f"<b>Pending holat — {format_uz_date(work_date)}</b>",
+                "",
+                "AM pending:",
+                "\n".join(am_pending) if am_pending else "Yo'q",
+                "",
+                "PM pending:",
+                "\n".join(pm_pending) if pm_pending else "Yo'q",
+            ]
+        )
+
+    async def metrics_report(self, as_of_date: date) -> str:
+        return await self.metrics_service.build_report(as_of_date, days=30)
+
+    async def onboarded_users_report(self) -> str:
+        async with self.db.session() as session:
+            users = await UserRepository(session).list_active()
+
+        lines = ["<b>Onboarded developerlar</b>"]
+        if not users:
+            lines.append("")
+            lines.append("Hali hech kim /start qilmagan.")
+            return "\n".join(lines)
+
+        for user in users:
+            lines.append("")
+            lines.append(
+                f"{user_mention_html(user)} | joined: {format_uz_date(user.joined_at.date())}"
+            )
+        return "\n".join(lines)
+
+    async def resend_missing(self, period: str, work_date: date, admin_user_id: int, now: datetime) -> int:
+        async with self.db.session() as session:
+            submission_repo = SubmissionRepository(session)
+            user_repo = UserRepository(session)
+            users = await user_repo.list_active()
+            submissions = await submission_repo.list_for_window(work_date, work_date)
+
+        submission_lookup = {submission.user.telegram_user_id: submission for submission in submissions}
+        missing_user_ids: set[int] = set()
+        for user in users:
+            submission = submission_lookup.get(user.telegram_user_id)
+            if period == "am":
+                if submission is None or submission.am_submitted_at is None:
+                    missing_user_ids.add(user.telegram_user_id)
+            else:
+                if submission is not None and submission.am_submitted_at is not None and submission.pm_submitted_at is None:
+                    missing_user_ids.add(user.telegram_user_id)
+
+        if period == "am":
+            sent_count = await self.reminder_service.send_morning_reminders(work_date, missing_user_ids)
+        else:
+            sent_count = await self.reminder_service.send_pm_reminders(work_date, missing_user_ids)
+
+        async with self.db.session() as session:
+            async with session.begin():
+                await AdminAuditRepository(session).log(
+                    admin_telegram_user_id=admin_user_id,
+                    action="remind_missing",
+                    payload={"period": period, "work_date": work_date.isoformat(), "count": sent_count},
+                    created_at=now,
+                )
+
+        return sent_count
+
+    async def cleanup_history(self, as_of_date: date) -> int:
+        cutoff_date = as_of_date - timedelta(days=30)
+        async with self.db.session() as session:
+            async with session.begin():
+                submission_removed = await SubmissionRepository(session).cleanup_older_than(cutoff_date)
+                digest_removed = await DigestRepository(session).cleanup_older_than(cutoff_date)
+        return submission_removed + digest_removed
