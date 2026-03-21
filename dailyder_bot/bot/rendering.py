@@ -45,18 +45,19 @@ async def render_private_screen(
     )
     now = local_now(app_context.settings.timezone_info)
     work_date = today_local(app_context.settings.timezone_info)
-    session_state = await app_context.flow_session_service.get(
-        user_id=user_id,
-        flow=UI_FLOW,
-        work_date=work_date,
-        now=now,
-    )
 
     candidate_ids: list[int] = []
     if preferred_message_id is not None:
         candidate_ids.append(preferred_message_id)
-    if include_last_message_candidate and session_state and session_state.last_message_id is not None:
-        if session_state.last_message_id not in candidate_ids:
+    elif include_last_message_candidate:
+        # Avoid an extra DB read on callback-driven renders where preferred_message_id is already known.
+        session_state = await app_context.flow_session_service.get(
+            user_id=user_id,
+            flow=UI_FLOW,
+            work_date=work_date,
+            now=now,
+        )
+        if session_state and session_state.last_message_id is not None:
             candidate_ids.append(session_state.last_message_id)
 
     rendered_message_id: int | None = None

@@ -12,8 +12,10 @@ class _FakeFlowSessionService:
     def __init__(self, last_message_id: int | None = None) -> None:
         self.last_message_id = last_message_id
         self.saved: dict | None = None
+        self.get_calls = 0
 
     async def get(self, *, user_id: str, flow: str, work_date, now):
+        self.get_calls += 1
         if self.last_message_id is None:
             return None
         return SimpleNamespace(last_message_id=self.last_message_id)
@@ -73,6 +75,7 @@ async def test_render_private_screen_edits_existing_message() -> None:
         }
     ]
     assert bot.send_calls == []
+    assert flow_session_service.get_calls == 0
     assert flow_session_service.saved is not None
     assert flow_session_service.saved["last_message_id"] == 77
 
@@ -96,6 +99,7 @@ async def test_render_private_screen_falls_back_to_send_on_edit_error() -> None:
     )
 
     assert message_id == 901
+    assert flow_session_service.get_calls == 1
     assert bot.edit_calls[0]["message_id"] == 55
     assert bot.send_calls == [
         {
@@ -145,6 +149,7 @@ async def test_render_private_screen_can_skip_last_message_candidate() -> None:
     )
 
     assert message_id == 901
+    assert flow_session_service.get_calls == 0
     assert bot.edit_calls == []
     assert bot.send_calls == [
         {
