@@ -9,6 +9,7 @@ from dailyder_bot.db.session import DatabaseSessionManager
 from dailyder_bot.services.access import AccessService
 from dailyder_bot.services.admin import AdminService
 from dailyder_bot.services.digest import DigestService
+from dailyder_bot.services.flow_sessions import FlowSessionService
 from dailyder_bot.services.metrics import MetricsService
 from dailyder_bot.services.reminders import ReminderService
 from dailyder_bot.services.submissions import SubmissionService
@@ -20,9 +21,9 @@ class AppContext:
     db: DatabaseSessionManager
     bot: Bot
     access_service: AccessService
+    flow_session_service: FlowSessionService
     submission_service: SubmissionService
     digest_service: DigestService
     reminder_service: ReminderService
     metrics_service: MetricsService
     admin_service: AdminService
-

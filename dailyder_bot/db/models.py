@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from dailyder_bot.db.base import Base, TimestampMixin
+from dailyder_bot.utils.ids import new_id
 
 
 class AppSetting(Base, TimestampMixin):
@@ -39,6 +40,8 @@ class User(Base, TimestampMixin):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     submissions: Mapped[list["DailySubmission"]] = relationship(back_populates="user")
+    flow_sessions: Mapped[list["BotFlowSession"]] = relationship(back_populates="user")
+    warnings: Mapped[list["DeveloperWarning"]] = relationship(back_populates="developer")
 
 
 class DailyDigest(Base, TimestampMixin):
@@ -87,6 +90,11 @@ class SubmissionItem(Base, TimestampMixin):
     subtask_name: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     submission: Mapped["DailySubmission"] = relationship(back_populates="items")
+    subtasks: Mapped[list["SubmissionSubtask"]] = relationship(
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="SubmissionSubtask.sort_order",
+    )
     status: Mapped["SubmissionItemStatus | None"] = relationship(
         back_populates="item",
         cascade="all, delete-orphan",
@@ -95,6 +103,8 @@ class SubmissionItem(Base, TimestampMixin):
 
     @property
     def subtask_names(self) -> list[str]:
+        if self.subtasks:
+            return [subtask.subtask_name for subtask in self.subtasks]
         if not self.subtask_name:
             return []
         return [item for item in self.subtask_name.split("\n") if item]
@@ -103,6 +113,33 @@ class SubmissionItem(Base, TimestampMixin):
     def subtask_names(self, values: list[str]) -> None:
         cleaned = [value.strip() for value in values if value and value.strip()]
         self.subtask_name = "\n".join(cleaned) if cleaned else None
+        self.subtasks = [
+            SubmissionSubtask(
+                id=new_id(),
+                sort_order=index,
+                subtask_name=value,
+            )
+            for index, value in enumerate(cleaned, start=1)
+        ]
+
+
+class SubmissionSubtask(Base, TimestampMixin):
+    __tablename__ = "submission_subtasks"
+    __table_args__ = (
+        UniqueConstraint("submission_item_id", "sort_order", name="uq_submission_subtask_order"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    submission_item_id: Mapped[str] = mapped_column(
+        ForeignKey("submission_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    subtask_name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    item: Mapped["SubmissionItem"] = relationship(back_populates="subtasks")
 
 
 class SubmissionItemStatus(Base, TimestampMixin):
@@ -120,6 +157,22 @@ class SubmissionItemStatus(Base, TimestampMixin):
     item: Mapped["SubmissionItem"] = relationship(back_populates="status")
 
 
+class BotFlowSession(Base, TimestampMixin):
+    __tablename__ = "bot_flow_sessions"
+    __table_args__ = (UniqueConstraint("user_id", "flow", "work_date", name="uq_bot_flow_session"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    flow: Mapped[str] = mapped_column(String(50), nullable=False)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    step: Mapped[str] = mapped_column(String(100), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    last_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    user: Mapped["User"] = relationship(back_populates="flow_sessions")
+
+
 class AdminAuditLog(Base):
     __tablename__ = "admin_audit_logs"
 
@@ -131,3 +184,19 @@ class AdminAuditLog(Base):
         DateTime(timezone=True),
         nullable=False,
     )
+
+
+class DeveloperWarning(Base, TimestampMixin):
+    __tablename__ = "developer_warnings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    developer_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    admin_telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    group_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+    developer: Mapped["User"] = relationship(back_populates="warnings")

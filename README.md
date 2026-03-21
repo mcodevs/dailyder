@@ -72,9 +72,18 @@ fly deploy -a dailyder-bot
 fly status
 ```
 
+## Operations
+
+- Run a single machine only. The bot uses long polling, so multiple active instances will duplicate updates and reminder delivery.
+- `fly.toml` runs migrations before each deploy with `release_command = 'python -m dailyder_bot.db.migrate'`.
+- The health check is `GET /healthz` and fails if the database is unreachable.
+- Application logs go to stdout/stderr. Use `fly logs -a dailyder-bot` for live inspection and `fly logs -a dailyder-bot -n 200` for recent history.
+- If the bot stops answering, check this order: health check status, Postgres connectivity, bot token validity, then Telegram rate limits.
+- Keep `BOT_TOKEN`, `DATABASE_URL`, `ADMIN_USER_IDS`, `TIMEZONE`, `HASHTAG`, `AM_REMINDER_TIME`, `PM_REMINDER_TIME`, and `PORT` aligned across environments.
+- After schema changes, verify the release command completed successfully before promoting traffic or scaling the machine back up.
+
 ## Notes
 
 - The bot uses long polling, so run a single app instance.
 - `GROUP_CHAT_ID` can be configured by env or via `/bind_group`.
 - History retention is 30 days and is cleaned automatically by a scheduled job.
-

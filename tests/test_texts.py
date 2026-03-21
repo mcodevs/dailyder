@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime
 
 from dailyder_bot.bot import texts
-from dailyder_bot.db.models import DailySubmission, SubmissionItem, SubmissionItemStatus, User
+from dailyder_bot.db.models import DailySubmission, SubmissionItem, SubmissionItemStatus, SubmissionSubtask, User
 
 
 def test_render_am_digest_contains_mentions_and_items() -> None:
@@ -74,6 +74,22 @@ def test_render_pm_digest_contains_status_emoji_and_note() -> None:
         subtask_name="AppStore\nSmoke test",
     )
     item.status = SubmissionItemStatus(id="st2", submission_item_id="i2", status="completed")
+    item.subtasks = [
+        SubmissionSubtask(
+            id="sub-1",
+            submission_item_id="i2",
+            sort_order=1,
+            subtask_name="AppStore",
+            status="warning",
+        ),
+        SubmissionSubtask(
+            id="sub-2",
+            submission_item_id="i2",
+            sort_order=2,
+            subtask_name="Smoke test",
+            status="completed",
+        ),
+    ]
     submission.items = [item]
 
     rendered = texts.render_pm_digest(date(2026, 3, 12), "daily", [submission])
@@ -85,3 +101,13 @@ def test_render_pm_digest_contains_status_emoji_and_note() -> None:
     assert "Izoh" in rendered
     assert "AppStore" in rendered
     assert "Smoke test" in rendered
+    assert "⚠️ AppStore" in rendered
+
+
+def test_help_and_welcome_texts_do_not_expose_daily_commands() -> None:
+    welcome = texts.welcome_text(is_admin=False)
+    help_text = texts.help_text(is_admin=True)
+
+    for forbidden in ("/today", "/update", "/help", "/admin"):
+        assert forbidden not in welcome
+        assert forbidden not in help_text

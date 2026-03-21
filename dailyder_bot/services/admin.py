@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from dailyder_bot.db.models import DeveloperWarning, User
 from dailyder_bot.config.settings import Settings
 from dailyder_bot.db.session import DatabaseSessionManager
 from dailyder_bot.repositories.admin_audit import AdminAuditRepository
@@ -9,11 +11,18 @@ from dailyder_bot.repositories.app_settings import AppSettingsRepository
 from dailyder_bot.repositories.digests import DigestRepository
 from dailyder_bot.repositories.submissions import SubmissionRepository
 from dailyder_bot.repositories.users import UserRepository
+from dailyder_bot.repositories.warnings import DeveloperWarningRepository
 from dailyder_bot.services.access import AccessService
 from dailyder_bot.services.metrics import MetricsService
 from dailyder_bot.services.reminders import ReminderService
 from dailyder_bot.utils.dates import format_uz_date
 from dailyder_bot.utils.telegram import user_mention_html
+
+
+@dataclass(slots=True)
+class IssuedWarning:
+    developer: User
+    warning: DeveloperWarning
 
 
 class AdminService:
@@ -116,7 +125,11 @@ class AdminService:
         )
 
     async def metrics_report(self, as_of_date: date) -> str:
-        return await self.metrics_service.build_report(as_of_date, days=30)
+        return await self.metrics_service.build_report(
+            as_of_date,
+            timezone_info=self.settings.timezone_info,
+            days=30,
+        )
 
     async def onboarded_users_report(self) -> str:
         async with self.db.session() as session:
@@ -168,6 +181,44 @@ class AdminService:
                 )
 
         return sent_count
+
+    async def resolve_warning_target(self, username: str) -> User | None:
+        async with self.db.session() as session:
+            return await UserRepository(session).get_by_username(username)
+
+    async def issue_warning(
+        self,
+        *,
+        admin_telegram_user_id: int,
+        developer_username: str,
+        group_chat_id: int,
+        reason: str,
+        now: datetime,
+    ) -> IssuedWarning:
+        async with self.db.session() as session:
+            async with session.begin():
+                user_repo = UserRepository(session)
+                developer = await user_repo.get_by_username(developer_username)
+                if developer is None:
+                    raise ValueError("Developer username topilmadi.")
+                warning = await DeveloperWarningRepository(session).create(
+                    developer_user_id=developer.id,
+                    admin_telegram_user_id=admin_telegram_user_id,
+                    group_chat_id=group_chat_id,
+                    reason=reason,
+                    created_at=now,
+                )
+                await AdminAuditRepository(session).log(
+                    admin_telegram_user_id=admin_telegram_user_id,
+                    action="issue_warning",
+                    payload={
+                        "developer_user_id": developer.id,
+                        "developer_username": developer.username,
+                        "group_chat_id": group_chat_id,
+                    },
+                    created_at=now,
+                )
+        return IssuedWarning(developer=warning.developer, warning=warning)
 
     async def cleanup_history(self, as_of_date: date) -> int:
         cutoff_date = as_of_date - timedelta(days=30)

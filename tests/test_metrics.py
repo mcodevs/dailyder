@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import UTC, date, datetime
 
 from dailyder_bot.db.models import DailySubmission, SubmissionItem, SubmissionItemStatus, User
@@ -65,6 +66,7 @@ def test_metrics_service_builds_expected_counts() -> None:
         users=[user],
         submissions=submissions,
         workdays=[date(2026, 3, 10), date(2026, 3, 11), date(2026, 3, 12)],
+        warning_counts=Counter({"u1": 2}),
     )
 
     snapshot = snapshots[0]
@@ -74,4 +76,4 @@ def test_metrics_service_builds_expected_counts() -> None:
     assert snapshot.missed_am == 1
     assert snapshot.missed_pm == 1
     assert snapshot.completed == 1
-
+    assert snapshot.admin_warnings_month == 2

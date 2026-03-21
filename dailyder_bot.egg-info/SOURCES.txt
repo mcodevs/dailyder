@@ -51,5 +51,7 @@ dailyder_bot/web/__init__.py
 dailyder_bot/web/health.py
 tests/test_metrics.py
 tests/test_parser.py
+tests/test_reminders.py
 tests/test_scheduler.py
 tests/test_texts.py
+tests/test_topic_binding.py

@@ -1,9 +1,45 @@
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
-from dailyder_bot.bot.callbacks import ActionCallback, ItemStatusCallback
+from dailyder_bot.bot.callbacks import (
+    AdminActionCallback,
+    DraftActionCallback,
+    DraftConfirmCallback,
+    DraftItemCallback,
+    MenuCallback,
+    PmActionCallback,
+    PmItemCallback,
+    PmStatusCallback,
+    PmTargetCallback,
+)
+from dailyder_bot.db.models import SubmissionItem
 from dailyder_bot.domain.enums import ItemStatus
+
+MENU_TODAY = "Bugungi tasklar"
+MENU_PM = "PM update"
+MENU_HELP = "Yordam"
+MENU_ADMIN = "Admin panel"
+MENU_HOME = "Bosh menyu"
+
+
+def main_menu_keyboard(*, is_admin: bool) -> ReplyKeyboardMarkup:
+    rows = [
+        [KeyboardButton(text=MENU_TODAY), KeyboardButton(text=MENU_PM)],
+        [KeyboardButton(text=MENU_HELP)],
+    ]
+    if is_admin:
+        rows.append([KeyboardButton(text=MENU_ADMIN)])
+    return ReplyKeyboardMarkup(
+        keyboard=rows,
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 
 def morning_shortcuts() -> InlineKeyboardMarkup:
@@ -12,7 +48,7 @@ def morning_shortcuts() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="Bugungi vazifani yuborish",
-                    callback_data=ActionCallback(name="today").pack(),
+                    callback_data=MenuCallback(action="today").pack(),
                 )
             ]
         ]
@@ -20,56 +56,302 @@ def morning_shortcuts() -> InlineKeyboardMarkup:
 
 
 def pm_shortcuts(*, has_submission: bool) -> InlineKeyboardMarkup:
-    action = "update" if has_submission else "today"
-    label = "Statuslarni yangilash" if has_submission else "Avval vazifani yuborish"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=label,
-                    callback_data=ActionCallback(name=action).pack(),
+                    text="Statuslarni yangilash" if has_submission else "Avval vazifani yuborish",
+                    callback_data=MenuCallback(action="pm" if has_submission else "today").pack(),
                 )
             ]
         ]
     )
 
 
-def status_keyboard(item_id: str) -> InlineKeyboardMarkup:
+def today_summary_keyboard(*, has_items: bool) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text="Task qo'shish",
+                callback_data=DraftActionCallback(action="start_add").pack(),
+            ),
+            InlineKeyboardButton(
+                text="Matndan import",
+                callback_data=DraftActionCallback(action="start_import").pack(),
+            ),
+        ]
+    ]
+    if has_items:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Taskni tahrirlash",
+                    callback_data=DraftActionCallback(action="pick_edit").pack(),
+                ),
+                InlineKeyboardButton(
+                    text="Taskni o'chirish",
+                    callback_data=DraftActionCallback(action="pick_delete").pack(),
+                ),
+            ]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Yuborish",
+                    callback_data=DraftActionCallback(action="submit").pack(),
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def project_picker_keyboard(project_choices: list[tuple[str, str]]) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=label,
+                callback_data=DraftItemCallback(action="select_project", item_id=item_id).pack(),
+            )
+        ]
+        for label, item_id in project_choices
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Yangi project",
+                callback_data=DraftActionCallback(action="new_project").pack(),
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def subtask_builder_keyboard(*, has_subtasks: bool) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="Subtask qo'shish",
+                callback_data=DraftActionCallback(action="add_subtask").pack(),
+            )
+        ]
+    ]
+    if has_subtasks:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Subtasklarni tozalash",
+                    callback_data=DraftActionCallback(action="clear_subtasks").pack(),
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Saqlash",
+                callback_data=DraftActionCallback(action="save_item").pack(),
+            ),
+            InlineKeyboardButton(
+                text="Bekor qilish",
+                callback_data=DraftActionCallback(action="cancel_flow").pack(),
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def item_picker_keyboard(items: list[SubmissionItem], *, action: str, back_action: str) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{index}. {item.project_name} — {item.task_name}",
+                callback_data=DraftItemCallback(action=action, item_id=item.id).pack(),
+            )
+        ]
+        for index, item in enumerate(items, start=1)
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Orqaga",
+                callback_data=DraftActionCallback(action=back_action).pack(),
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def draft_confirm_keyboard(*, action: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"{ItemStatus.COMPLETED.emoji} Bajarildi",
-                    callback_data=ItemStatusCallback(item_id=item_id, status=ItemStatus.COMPLETED.value).pack(),
+                    text="Tasdiqlash",
+                    callback_data=DraftConfirmCallback(action=action, decision="yes").pack(),
                 ),
                 InlineKeyboardButton(
-                    text=f"{ItemStatus.WARNING.emoji} Xavf bor",
-                    callback_data=ItemStatusCallback(item_id=item_id, status=ItemStatus.WARNING.value).pack(),
+                    text="Bekor qilish",
+                    callback_data=DraftConfirmCallback(action=action, decision="no").pack(),
                 ),
-            ],
+            ]
+        ]
+    )
+
+
+def draft_resume_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"{ItemStatus.BLOCKED.emoji} To'siq bor",
-                    callback_data=ItemStatusCallback(item_id=item_id, status=ItemStatus.BLOCKED.value).pack(),
+                    text="Davom etish",
+                    callback_data=DraftActionCallback(action="resume").pack(),
                 ),
                 InlineKeyboardButton(
-                    text=f"{ItemStatus.DROPPED.emoji} Bekor qilindi",
-                    callback_data=ItemStatusCallback(item_id=item_id, status=ItemStatus.DROPPED.value).pack(),
+                    text="Qaytadan boshlash",
+                    callback_data=DraftActionCallback(action="restart").pack(),
                 ),
             ],
         ]
     )
 
 
-def skip_note_keyboard() -> InlineKeyboardMarkup:
+def pm_summary_keyboard(
+    *,
+    items: list[SubmissionItem],
+    status_map: dict[str, str],
+) -> InlineKeyboardMarkup:
+    rows = []
+    for index, item in enumerate(items, start=1):
+        status_value = status_map.get(item.id)
+        emoji = ItemStatus(status_value).emoji if status_value else "◻️"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{emoji} {index}. {item.task_name}",
+                    callback_data=PmItemCallback(action="select_item", item_id=item.id).pack(),
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Yakuniy izoh",
+                callback_data=PmActionCallback(action="edit_note").pack(),
+            ),
+            InlineKeyboardButton(
+                text="Yakunlash",
+                callback_data=PmActionCallback(action="submit").pack(),
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def pm_item_detail_keyboard(
+    *,
+    item: SubmissionItem,
+    current_status: str | None,
+) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{ItemStatus(current_status).emoji if current_status else '◻️'} Task status",
+                callback_data=PmTargetCallback(
+                    item_id=item.id,
+                    target_type="item",
+                    target_id=item.id,
+                ).pack(),
+            )
+        ]
+    ]
+    for subtask in item.subtasks:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{ItemStatus(subtask.status).emoji if subtask.status else '◻️'} {subtask.subtask_name}",
+                    callback_data=PmTargetCallback(
+                        item_id=item.id,
+                        target_type="subtask",
+                        target_id=subtask.id,
+                    ).pack(),
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Orqaga",
+                callback_data=PmActionCallback(action="back_to_summary").pack(),
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def pm_status_keyboard(*, item_id: str, target_type: str, target_id: str) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{status.emoji} {status.label_uz}",
+                callback_data=PmStatusCallback(
+                    item_id=item_id,
+                    target_type=target_type,
+                    target_id=target_id,
+                    status=status.value,
+                ).pack(),
+            )
+        ]
+        for status in ItemStatus
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="Orqaga",
+                callback_data=PmActionCallback(action="back_to_summary").pack(),
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def pm_note_keyboard(*, has_note: bool) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="Izohsiz qoldirish",
+                callback_data=PmActionCallback(action="skip_note").pack(),
+            ),
+            InlineKeyboardButton(
+                text="Orqaga",
+                callback_data=PmActionCallback(action="back_to_summary").pack(),
+            ),
+        ]
+    ]
+    if has_note:
+        rows.insert(
+            0,
+            [
+                InlineKeyboardButton(
+                    text="Izohni tozalash",
+                    callback_data=PmActionCallback(action="clear_note").pack(),
+                )
+            ],
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def pm_resume_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Izohsiz yakunlash",
-                    callback_data=ActionCallback(name="skip_note").pack(),
-                )
-            ]
+                    text="Davom etish",
+                    callback_data=PmActionCallback(action="resume").pack(),
+                ),
+                InlineKeyboardButton(
+                    text="Qaytadan boshlash",
+                    callback_data=PmActionCallback(action="restart").pack(),
+                ),
+            ],
         ]
     )
 
@@ -80,33 +362,32 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="Holat",
-                    callback_data=ActionCallback(name="admin_readiness").pack(),
+                    callback_data=AdminActionCallback(action="readiness").pack(),
                 ),
                 InlineKeyboardButton(
                     text="Pending",
-                    callback_data=ActionCallback(name="admin_pending").pack(),
+                    callback_data=AdminActionCallback(action="pending").pack(),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="Metrikalar",
-                    callback_data=ActionCallback(name="admin_metrics").pack(),
+                    callback_data=AdminActionCallback(action="metrics").pack(),
                 ),
                 InlineKeyboardButton(
                     text="Developerlar",
-                    callback_data=ActionCallback(name="admin_users").pack(),
+                    callback_data=AdminActionCallback(action="users").pack(),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="AM eslatma",
-                    callback_data=ActionCallback(name="admin_remind_am").pack(),
+                    callback_data=AdminActionCallback(action="remind_am").pack(),
                 ),
                 InlineKeyboardButton(
                     text="PM eslatma",
-                    callback_data=ActionCallback(name="admin_remind_pm").pack(),
+                    callback_data=AdminActionCallback(action="remind_pm").pack(),
                 ),
             ],
         ]
     )
-

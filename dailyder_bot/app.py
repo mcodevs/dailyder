@@ -15,6 +15,7 @@ from dailyder_bot.scheduler.jobs import ReminderScheduler
 from dailyder_bot.services.access import AccessService
 from dailyder_bot.services.admin import AdminService
 from dailyder_bot.services.digest import DigestService
+from dailyder_bot.services.flow_sessions import FlowSessionService
 from dailyder_bot.services.metrics import MetricsService
 from dailyder_bot.services.reminders import ReminderService
 from dailyder_bot.services.submissions import SubmissionService
@@ -33,6 +34,7 @@ class DailyderApplication:
 
         parser = MorningSubmissionParser()
         access_service = AccessService(self.settings, self.db)
+        flow_session_service = FlowSessionService(self.db)
         submission_service = SubmissionService(self.settings, self.db, parser)
         digest_service = DigestService(self.settings, self.db, self.bot, access_service)
         metrics_service = MetricsService(self.db)
@@ -55,6 +57,7 @@ class DailyderApplication:
             db=self.db,
             bot=self.bot,
             access_service=access_service,
+            flow_session_service=flow_session_service,
             submission_service=submission_service,
             digest_service=digest_service,
             reminder_service=reminder_service,

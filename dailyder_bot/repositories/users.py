@@ -20,6 +20,18 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_username(self, username: str) -> User | None:
+        normalized = username.strip().lstrip("@").lower()
+        if not normalized:
+            return None
+        result = await self.session.execute(
+            select(User).where(
+                func.lower(User.username) == normalized,
+                User.is_active.is_(True),
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def upsert_from_telegram(
         self,
         telegram_user: TelegramUser,
@@ -71,4 +83,3 @@ class UserRepository:
             select(func.count()).select_from(User).where(User.is_active.is_(True))
         )
         return int(result.scalar_one())
-

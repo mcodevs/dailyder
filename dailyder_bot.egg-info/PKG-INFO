@@ -81,7 +81,7 @@ fly secrets set BOT_TOKEN=... DATABASE_URL=... ADMIN_USER_IDS=111111111
 3. Deploy:
 
 ```bash
-fly deploy
+fly deploy -a dailyder-bot
 ```
 
 4. Verify the health check:
