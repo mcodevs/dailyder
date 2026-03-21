@@ -10,8 +10,10 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from dailyder_bot.bot import keyboards, texts
 from dailyder_bot.bot.callbacks import AdminActionCallback
+from dailyder_bot.bot.rendering import render_private_screen
 from dailyder_bot.bot.states import WarningFlowState
 from dailyder_bot.container import AppContext
+from dailyder_bot.repositories.users import UserRepository
 from dailyder_bot.utils.dates import local_now, today_local
 from dailyder_bot.utils.telegram import telegram_user_mention_html, user_mention_html
 
@@ -50,7 +52,18 @@ async def handle_admin_menu(message: Message, app_context: AppContext) -> None:
     if not _is_admin(message, app_context):
         await message.answer(texts.admin_only_text())
         return
-    await message.answer(texts.admin_menu_text(), reply_markup=keyboards.admin_menu_keyboard())
+    user_id = await _get_private_user_id(app_context, message)
+    if user_id is None:
+        await message.answer(texts.admin_menu_text(), reply_markup=keyboards.admin_menu_keyboard())
+        return
+    await render_private_screen(
+        app_context=app_context,
+        user_id=user_id,
+        chat_id=message.chat.id,
+        screen="admin_menu",
+        text=texts.admin_menu_text(),
+        reply_markup=keyboards.admin_menu_keyboard(),
+    )
 
 
 @router.message(Command("pending"), F.chat.type == "private")
@@ -60,6 +73,18 @@ async def handle_pending(message: Message, app_context: AppContext) -> None:
         await message.answer(texts.admin_only_text())
         return
     report = await app_context.admin_service.pending_report(today_local(app_context.settings.timezone_info))
+    if message.chat.type == "private":
+        user_id = await _get_private_user_id(app_context, message)
+        if user_id is not None:
+            await render_private_screen(
+                app_context=app_context,
+                user_id=user_id,
+                chat_id=message.chat.id,
+                screen="admin_pending",
+                text=report,
+                reply_markup=keyboards.admin_menu_keyboard(),
+            )
+            return
     await message.answer(report)
 
 
@@ -206,7 +231,18 @@ async def handle_metrics(message: Message, app_context: AppContext) -> None:
         await message.answer(texts.admin_only_text())
         return
     report = await app_context.admin_service.metrics_report(today_local(app_context.settings.timezone_info))
-    await message.answer(report)
+    user_id = await _get_private_user_id(app_context, message)
+    if user_id is None:
+        await message.answer(report)
+        return
+    await render_private_screen(
+        app_context=app_context,
+        user_id=user_id,
+        chat_id=message.chat.id,
+        screen="admin_metrics",
+        text=report,
+        reply_markup=keyboards.admin_menu_keyboard(),
+    )
 
 
 @router.message(Command("remind_missing"), F.chat.type == "private")
@@ -228,7 +264,19 @@ async def handle_remind_missing(
         admin_user_id=message.from_user.id,
         now=local_now(app_context.settings.timezone_info),
     )
-    await message.answer(f"{sent_count} ta developerga {period.upper()} eslatma yuborildi.")
+    user_id = await _get_private_user_id(app_context, message)
+    notice = f"{sent_count} ta developerga {period.upper()} eslatma yuborildi."
+    if user_id is None:
+        await message.answer(notice)
+        return
+    await render_private_screen(
+        app_context=app_context,
+        user_id=user_id,
+        chat_id=message.chat.id,
+        screen=f"admin_remind_{period}",
+        text=notice,
+        reply_markup=keyboards.admin_menu_keyboard(),
+    )
 
 
 @router.callback_query(AdminActionCallback.filter())
@@ -246,15 +294,75 @@ async def handle_admin_actions(
         return
 
     today = today_local(app_context.settings.timezone_info)
-    admin_menu = keyboards.admin_menu_keyboard()
+    user_id = await _get_private_user_id(app_context, callback.message)
+    if user_id is None:
+        admin_menu = keyboards.admin_menu_keyboard()
+        if callback_data.action == "readiness":
+            await _edit_or_send_private_callback(callback.message, await app_context.admin_service.readiness_report(), admin_menu)
+        elif callback_data.action == "pending":
+            await _edit_or_send_private_callback(callback.message, await app_context.admin_service.pending_report(today), admin_menu)
+        elif callback_data.action == "metrics":
+            await _edit_or_send_private_callback(callback.message, await app_context.admin_service.metrics_report(today), admin_menu)
+        elif callback_data.action == "users":
+            await _edit_or_send_private_callback(callback.message, await app_context.admin_service.onboarded_users_report(), admin_menu)
+        elif callback_data.action == "remind_am":
+            sent_count = await app_context.admin_service.resend_missing(
+                period="am",
+                work_date=today,
+                admin_user_id=callback.from_user.id,
+                now=local_now(app_context.settings.timezone_info),
+            )
+            await _edit_or_send_private_callback(callback.message, f"{sent_count} ta developerga AM eslatma yuborildi.", admin_menu)
+        elif callback_data.action == "remind_pm":
+            sent_count = await app_context.admin_service.resend_missing(
+                period="pm",
+                work_date=today,
+                admin_user_id=callback.from_user.id,
+                now=local_now(app_context.settings.timezone_info),
+            )
+            await _edit_or_send_private_callback(callback.message, f"{sent_count} ta developerga PM eslatma yuborildi.", admin_menu)
+        return
+
     if callback_data.action == "readiness":
-        await _edit_or_send_private_callback(callback.message, await app_context.admin_service.readiness_report(), admin_menu)
+        await render_private_screen(
+            app_context=app_context,
+            user_id=user_id,
+            chat_id=callback.message.chat.id,
+            screen="admin_readiness",
+            text=await app_context.admin_service.readiness_report(),
+            reply_markup=keyboards.admin_menu_keyboard(),
+            preferred_message_id=callback.message.message_id,
+        )
     elif callback_data.action == "pending":
-        await _edit_or_send_private_callback(callback.message, await app_context.admin_service.pending_report(today), admin_menu)
+        await render_private_screen(
+            app_context=app_context,
+            user_id=user_id,
+            chat_id=callback.message.chat.id,
+            screen="admin_pending",
+            text=await app_context.admin_service.pending_report(today),
+            reply_markup=keyboards.admin_menu_keyboard(),
+            preferred_message_id=callback.message.message_id,
+        )
     elif callback_data.action == "metrics":
-        await _edit_or_send_private_callback(callback.message, await app_context.admin_service.metrics_report(today), admin_menu)
+        await render_private_screen(
+            app_context=app_context,
+            user_id=user_id,
+            chat_id=callback.message.chat.id,
+            screen="admin_metrics",
+            text=await app_context.admin_service.metrics_report(today),
+            reply_markup=keyboards.admin_menu_keyboard(),
+            preferred_message_id=callback.message.message_id,
+        )
     elif callback_data.action == "users":
-        await _edit_or_send_private_callback(callback.message, await app_context.admin_service.onboarded_users_report(), admin_menu)
+        await render_private_screen(
+            app_context=app_context,
+            user_id=user_id,
+            chat_id=callback.message.chat.id,
+            screen="admin_users",
+            text=await app_context.admin_service.onboarded_users_report(),
+            reply_markup=keyboards.admin_menu_keyboard(),
+            preferred_message_id=callback.message.message_id,
+        )
     elif callback_data.action == "remind_am":
         sent_count = await app_context.admin_service.resend_missing(
             period="am",
@@ -262,7 +370,15 @@ async def handle_admin_actions(
             admin_user_id=callback.from_user.id,
             now=local_now(app_context.settings.timezone_info),
         )
-        await _edit_or_send_private_callback(callback.message, f"{sent_count} ta developerga AM eslatma yuborildi.", admin_menu)
+        await render_private_screen(
+            app_context=app_context,
+            user_id=user_id,
+            chat_id=callback.message.chat.id,
+            screen="admin_remind_am",
+            text=f"{sent_count} ta developerga AM eslatma yuborildi.",
+            reply_markup=keyboards.admin_menu_keyboard(),
+            preferred_message_id=callback.message.message_id,
+        )
     elif callback_data.action == "remind_pm":
         sent_count = await app_context.admin_service.resend_missing(
             period="pm",
@@ -270,7 +386,15 @@ async def handle_admin_actions(
             admin_user_id=callback.from_user.id,
             now=local_now(app_context.settings.timezone_info),
         )
-        await _edit_or_send_private_callback(callback.message, f"{sent_count} ta developerga PM eslatma yuborildi.", admin_menu)
+        await render_private_screen(
+            app_context=app_context,
+            user_id=user_id,
+            chat_id=callback.message.chat.id,
+            screen="admin_remind_pm",
+            text=f"{sent_count} ta developerga PM eslatma yuborildi.",
+            reply_markup=keyboards.admin_menu_keyboard(),
+            preferred_message_id=callback.message.message_id,
+        )
 
 
 def _is_admin(message: Message, app_context: AppContext) -> bool:
@@ -330,3 +454,11 @@ async def _edit_or_send_private_callback(
             await message.answer(text, reply_markup=reply_markup)
             return
         raise
+
+
+async def _get_private_user_id(app_context: AppContext, message: Message) -> str | None:
+    if message.from_user is None or message.chat.type != "private":
+        return None
+    async with app_context.db.session() as session:
+        user = await UserRepository(session).get_by_telegram_id(message.from_user.id)
+    return user.id if user is not None else None
