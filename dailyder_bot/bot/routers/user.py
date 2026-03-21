@@ -4,8 +4,9 @@ import logging
 from datetime import date
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, ErrorEvent, InlineKeyboardMarkup, Message
 
 from dailyder_bot.bot import keyboards, texts
 from dailyder_bot.bot.callbacks import (
@@ -43,6 +44,7 @@ async def handle_start(
 ) -> None:
     if message.from_user is None:
         return
+    logger.info("Handling /start", extra={"telegram_user_id": message.from_user.id})
 
     try:
         group_chat_id = await app_context.access_service.ensure_group_member(bot, message.from_user.id)
@@ -80,6 +82,10 @@ async def handle_help(
 ) -> None:
     if message.from_user is None:
         return
+    logger.info(
+        "Handling help entry",
+        extra={"telegram_user_id": message.from_user.id, "text": getattr(message, "text", None)},
+    )
     user = await _get_user_record(app_context, message.from_user.id)
     if user is None:
         await message.answer(texts.start_required_text())
@@ -102,6 +108,10 @@ async def handle_today_entry(
 ) -> None:
     if message.from_user is None:
         return
+    logger.info(
+        "Handling today entry",
+        extra={"telegram_user_id": message.from_user.id, "text": getattr(message, "text", None)},
+    )
     user = await _ensure_ready_user(message, bot, app_context, message.from_user.id)
     if user is None:
         return
@@ -117,6 +127,10 @@ async def handle_pm_entry(
 ) -> None:
     if message.from_user is None:
         return
+    logger.info(
+        "Handling pm entry",
+        extra={"telegram_user_id": message.from_user.id, "text": getattr(message, "text", None)},
+    )
     user = await _ensure_ready_user(message, bot, app_context, message.from_user.id)
     if user is None:
         return
@@ -153,6 +167,7 @@ async def handle_menu_today_callback(
     await callback.answer()
     if callback.message is None or callback.from_user is None:
         return
+    logger.info("Handling menu callback", extra={"telegram_user_id": callback.from_user.id, "action": "today"})
     user = await _get_user_record(app_context, callback.from_user.id)
     if user is None:
         await callback.message.answer(texts.start_required_text())
@@ -168,6 +183,7 @@ async def handle_menu_help_callback(
     await callback.answer()
     if callback.message is None or callback.from_user is None:
         return
+    logger.info("Handling menu callback", extra={"telegram_user_id": callback.from_user.id, "action": "help"})
     user = await _get_user_record(app_context, callback.from_user.id)
     if user is None:
         await callback.message.answer(texts.start_required_text())
@@ -190,6 +206,7 @@ async def handle_menu_pm_callback(
     await callback.answer()
     if callback.message is None or callback.from_user is None:
         return
+    logger.info("Handling menu callback", extra={"telegram_user_id": callback.from_user.id, "action": "pm"})
     user = await _get_user_record(app_context, callback.from_user.id)
     if user is None:
         await callback.message.answer(texts.start_required_text())
@@ -1829,12 +1846,6 @@ async def _get_user_record(app_context: AppContext, telegram_user_id: int):
         return await UserRepository(session).get_by_telegram_id(telegram_user_id)
 
 
-async def _is_admin_user(app_context: AppContext, user_id: str) -> bool:
-    async with app_context.db.session() as session:
-        user = await UserRepository(session).get_by_id(user_id)
-    return bool(user) and app_context.access_service.is_admin(user.telegram_user_id)
-
-
 def _work_date(app_context: AppContext) -> date:
     return today_local(app_context.settings.timezone_info)
 
@@ -1900,16 +1911,67 @@ async def _render_screen(
     reply_markup: InlineKeyboardMarkup | None = None,
     preferred_message_id: int | None = None,
 ) -> None:
+    is_admin = message.chat.type == "private" and app_context.access_service.is_admin(message.chat.id)
     navigation_markup = keyboards.with_main_menu(
         reply_markup,
-        is_admin=await _is_admin_user(app_context, user_id),
+        is_admin=is_admin,
     )
-    await render_private_screen(
-        app_context=app_context,
-        user_id=user_id,
-        chat_id=message.chat.id,
-        screen=screen,
-        text=text,
-        reply_markup=navigation_markup,
-        preferred_message_id=preferred_message_id,
+    try:
+        await render_private_screen(
+            app_context=app_context,
+            user_id=user_id,
+            chat_id=message.chat.id,
+            screen=screen,
+            text=text,
+            reply_markup=navigation_markup,
+            preferred_message_id=preferred_message_id,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to render user private screen",
+            extra={
+                "screen": screen,
+                "chat_id": message.chat.id,
+                "user_id": user_id,
+                "preferred_message_id": preferred_message_id,
+            },
+        )
+        try:
+            await message.answer("Xatolik yuz berdi. /start yoki /today ni qayta yuboring.")
+        except TelegramBadRequest:
+            logger.exception(
+                "Failed to send fallback user error message",
+                extra={"chat_id": message.chat.id, "user_id": user_id},
+            )
+
+
+@router.error()
+async def handle_user_router_error(event: ErrorEvent) -> None:
+    update_id = event.update.update_id
+    message = event.update.message
+    callback = event.update.callback_query
+    logger.error(
+        "Unhandled exception in user router",
+        exc_info=event.exception,
+        extra={
+            "update_id": update_id,
+            "telegram_user_id": (
+                message.from_user.id
+                if message and message.from_user
+                else callback.from_user.id
+                if callback and callback.from_user
+                else None
+            ),
+        },
     )
+    if callback is not None and callback.message is not None:
+        try:
+            await callback.message.answer("Texnik xatolik bo'ldi. Iltimos, /start ni qayta yuboring.")
+        except TelegramBadRequest:
+            logger.exception("Failed to send callback fallback error message", extra={"update_id": update_id})
+        return
+    if message is not None:
+        try:
+            await message.answer("Texnik xatolik bo'ldi. Iltimos, /start ni qayta yuboring.")
+        except TelegramBadRequest:
+            logger.exception("Failed to send message fallback error text", extra={"update_id": update_id})

@@ -6,7 +6,7 @@ from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, ErrorEvent, InlineKeyboardMarkup, Message
 
 from dailyder_bot.bot import keyboards, texts
 from dailyder_bot.bot.callbacks import AdminActionCallback, MenuCallback
@@ -49,6 +49,11 @@ async def handle_bind_group(message: Message, app_context: AppContext) -> None:
 @router.message(Command("admin"), F.chat.type == "private")
 @router.message(F.chat.type == "private", F.text == keyboards.MENU_ADMIN)
 async def handle_admin_menu(message: Message, app_context: AppContext) -> None:
+    if message.from_user is not None:
+        logger.info(
+            "Handling admin menu entry",
+            extra={"telegram_user_id": message.from_user.id, "text": getattr(message, "text", None)},
+        )
     if not _is_admin(message, app_context):
         await message.answer(texts.admin_only_text())
         return
@@ -74,6 +79,7 @@ async def handle_menu_admin_callback(
     await callback.answer()
     if callback.message is None or callback.from_user is None:
         return
+    logger.info("Handling admin menu callback", extra={"telegram_user_id": callback.from_user.id, "action": "admin"})
     if not app_context.access_service.is_admin(callback.from_user.id):
         await callback.message.answer(texts.admin_only_text())
         return
@@ -318,6 +324,10 @@ async def handle_admin_actions(
         return
     if callback.message is None:
         return
+    logger.info(
+        "Handling admin action callback",
+        extra={"telegram_user_id": callback.from_user.id, "action": callback_data.action},
+    )
 
     today = today_local(app_context.settings.timezone_info)
     user_id = (
@@ -496,3 +506,35 @@ async def _get_private_user_id_by_telegram_id(app_context: AppContext, telegram_
     async with app_context.db.session() as session:
         user = await UserRepository(session).get_by_telegram_id(telegram_user_id)
     return user.id if user is not None else None
+
+
+@router.error()
+async def handle_admin_router_error(event: ErrorEvent) -> None:
+    update_id = event.update.update_id
+    message = event.update.message
+    callback = event.update.callback_query
+    logger.error(
+        "Unhandled exception in admin router",
+        exc_info=event.exception,
+        extra={
+            "update_id": update_id,
+            "telegram_user_id": (
+                message.from_user.id
+                if message and message.from_user
+                else callback.from_user.id
+                if callback and callback.from_user
+                else None
+            ),
+        },
+    )
+    if callback is not None and callback.message is not None:
+        try:
+            await callback.message.answer("Admin amalida texnik xatolik bo'ldi. Qayta urinib ko'ring.")
+        except TelegramBadRequest:
+            logger.exception("Failed to send admin callback fallback error", extra={"update_id": update_id})
+        return
+    if message is not None:
+        try:
+            await message.answer("Admin amalida texnik xatolik bo'ldi. Qayta urinib ko'ring.")
+        except TelegramBadRequest:
+            logger.exception("Failed to send admin message fallback error", extra={"update_id": update_id})

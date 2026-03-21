@@ -81,13 +81,8 @@ async def test_handle_start_renders_today_summary_without_sending_welcome_messag
         render_calls.append(kwargs)
         return 101
 
-    async def _fake_is_admin_user(app_context, user_id: str) -> bool:
-        assert user_id == "user-1"
-        return False
-
     monkeypatch.setattr(user_router, "UserRepository", _FakeUserRepository)
     monkeypatch.setattr(user_router, "render_private_screen", _fake_render_private_screen)
-    monkeypatch.setattr(user_router, "_is_admin_user", _fake_is_admin_user)
 
     app_context = SimpleNamespace(
         settings=SimpleNamespace(timezone_info=ZoneInfo("Asia/Tashkent")),

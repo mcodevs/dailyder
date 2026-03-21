@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup
@@ -17,6 +18,8 @@ _EDIT_FALLBACK_ERRORS = (
     "message identifier is not specified",
     "there is no text in the message to edit",
 )
+_PARSE_ERROR_FRAGMENT = "can't parse entities"
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 async def render_private_screen(
@@ -29,6 +32,15 @@ async def render_private_screen(
     reply_markup: InlineKeyboardMarkup | None = None,
     preferred_message_id: int | None = None,
 ) -> int:
+    logger.info(
+        "Render private screen requested",
+        extra={
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "screen": screen,
+            "preferred_message_id": preferred_message_id,
+        },
+    )
     now = local_now(app_context.settings.timezone_info)
     work_date = today_local(app_context.settings.timezone_info)
     session_state = await app_context.flow_session_service.get(
@@ -61,6 +73,36 @@ async def render_private_screen(
             if "message is not modified" in error_text:
                 rendered_message_id = message_id
                 break
+            if _PARSE_ERROR_FRAGMENT in error_text:
+                logger.warning(
+                    "Retrying edit_message_text without parse mode after entity parse error",
+                    extra={
+                        "chat_id": chat_id,
+                        "message_id": message_id,
+                        "screen": screen,
+                        "error": str(exc),
+                    },
+                )
+                try:
+                    await app_context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=_plain_text(text),
+                        reply_markup=reply_markup,
+                        parse_mode=None,
+                    )
+                    rendered_message_id = message_id
+                    break
+                except TelegramBadRequest as retry_exc:
+                    logger.warning(
+                        "Plain-text edit retry failed, will send a new message",
+                        extra={
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "screen": screen,
+                            "error": str(retry_exc),
+                        },
+                    )
             logger.warning(
                 "Falling back to send_message after edit_message_text failed",
                 extra={
@@ -73,11 +115,30 @@ async def render_private_screen(
             continue
 
     if rendered_message_id is None:
-        sent = await app_context.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            reply_markup=reply_markup,
-        )
+        try:
+            sent = await app_context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=reply_markup,
+            )
+        except TelegramBadRequest as exc:
+            error_text = str(exc).lower()
+            if _PARSE_ERROR_FRAGMENT not in error_text:
+                raise
+            logger.warning(
+                "Retrying send_message without parse mode after entity parse error",
+                extra={
+                    "chat_id": chat_id,
+                    "screen": screen,
+                    "error": str(exc),
+                },
+            )
+            sent = await app_context.bot.send_message(
+                chat_id=chat_id,
+                text=_plain_text(text),
+                reply_markup=reply_markup,
+                parse_mode=None,
+            )
         rendered_message_id = sent.message_id
 
     await app_context.flow_session_service.set(
@@ -90,3 +151,7 @@ async def render_private_screen(
         last_message_id=rendered_message_id,
     )
     return rendered_message_id
+
+
+def _plain_text(text: str) -> str:
+    return _HTML_TAG_RE.sub("", text)
