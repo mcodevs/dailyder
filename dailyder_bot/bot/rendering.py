@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup
 
@@ -7,6 +9,7 @@ from dailyder_bot.container import AppContext
 from dailyder_bot.utils.dates import local_now, today_local
 
 UI_FLOW = "ui"
+logger = logging.getLogger(__name__)
 
 _EDIT_FALLBACK_ERRORS = (
     "message can't be edited",
@@ -58,9 +61,16 @@ async def render_private_screen(
             if "message is not modified" in error_text:
                 rendered_message_id = message_id
                 break
-            if any(fragment in error_text for fragment in _EDIT_FALLBACK_ERRORS):
-                continue
-            raise
+            logger.warning(
+                "Falling back to send_message after edit_message_text failed",
+                extra={
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "screen": screen,
+                    "error": str(exc),
+                },
+            )
+            continue
 
     if rendered_message_id is None:
         sent = await app_context.bot.send_message(

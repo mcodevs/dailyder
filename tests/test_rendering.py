@@ -106,3 +106,25 @@ async def test_render_private_screen_falls_back_to_send_on_edit_error() -> None:
     ]
     assert flow_session_service.saved is not None
     assert flow_session_service.saved["last_message_id"] == 901
+
+
+@pytest.mark.asyncio
+async def test_render_private_screen_falls_back_on_unexpected_bad_request() -> None:
+    flow_session_service = _FakeFlowSessionService(last_message_id=55)
+    bot = _FakeBot(
+        edit_error=TelegramBadRequest(
+            method=EditMessageText(chat_id=1001, message_id=55, text="Updated"),
+            message="some new telegram bad request text",
+        )
+    )
+
+    message_id = await render_private_screen(
+        app_context=_context(flow_session_service=flow_session_service, bot=bot),  # type: ignore[arg-type]
+        user_id="user-1",
+        chat_id=1001,
+        screen="today_summary",
+        text="Updated",
+    )
+
+    assert message_id == 901
+    assert bot.send_calls
