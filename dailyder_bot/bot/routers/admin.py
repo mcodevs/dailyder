@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from dailyder_bot.bot import keyboards, texts
-from dailyder_bot.bot.callbacks import AdminActionCallback
+from dailyder_bot.bot.callbacks import AdminActionCallback, MenuCallback
 from dailyder_bot.bot.rendering import render_private_screen
 from dailyder_bot.bot.states import WarningFlowState
 from dailyder_bot.container import AppContext
@@ -63,6 +63,32 @@ async def handle_admin_menu(message: Message, app_context: AppContext) -> None:
         screen="admin_menu",
         text=texts.admin_menu_text(),
         reply_markup=keyboards.admin_menu_keyboard(),
+    )
+
+
+@router.callback_query(MenuCallback.filter(F.action == "admin"))
+async def handle_menu_admin_callback(
+    callback: CallbackQuery,
+    app_context: AppContext,
+) -> None:
+    await callback.answer()
+    if callback.message is None or callback.from_user is None:
+        return
+    if not app_context.access_service.is_admin(callback.from_user.id):
+        await callback.message.answer(texts.admin_only_text())
+        return
+    user_id = await _get_private_user_id_by_telegram_id(app_context, callback.from_user.id)
+    if user_id is None:
+        await callback.message.answer(texts.admin_menu_text(), reply_markup=keyboards.admin_menu_keyboard())
+        return
+    await render_private_screen(
+        app_context=app_context,
+        user_id=user_id,
+        chat_id=callback.message.chat.id,
+        screen="admin_menu",
+        text=texts.admin_menu_text(),
+        reply_markup=keyboards.admin_menu_keyboard(),
+        preferred_message_id=callback.message.message_id,
     )
 
 
@@ -294,7 +320,11 @@ async def handle_admin_actions(
         return
 
     today = today_local(app_context.settings.timezone_info)
-    user_id = await _get_private_user_id(app_context, callback.message)
+    user_id = (
+        await _get_private_user_id_by_telegram_id(app_context, callback.from_user.id)
+        if callback.message.chat.type == "private"
+        else None
+    )
     if user_id is None:
         admin_menu = keyboards.admin_menu_keyboard()
         if callback_data.action == "readiness":
@@ -459,6 +489,10 @@ async def _edit_or_send_private_callback(
 async def _get_private_user_id(app_context: AppContext, message: Message) -> str | None:
     if message.from_user is None or message.chat.type != "private":
         return None
+    return await _get_private_user_id_by_telegram_id(app_context, message.from_user.id)
+
+
+async def _get_private_user_id_by_telegram_id(app_context: AppContext, telegram_user_id: int) -> str | None:
     async with app_context.db.session() as session:
-        user = await UserRepository(session).get_by_telegram_id(message.from_user.id)
+        user = await UserRepository(session).get_by_telegram_id(telegram_user_id)
     return user.id if user is not None else None

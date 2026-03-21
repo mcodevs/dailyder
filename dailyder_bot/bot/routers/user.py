@@ -63,18 +63,11 @@ async def handle_start(
             )
 
     welcome_text = texts.welcome_text(is_admin=app_context.access_service.is_admin(message.from_user.id))
-    sent = await message.answer(
-        welcome_text,
-        reply_markup=keyboards.main_menu_keyboard(
-            is_admin=app_context.access_service.is_admin(message.from_user.id),
-        ),
-    )
     await _show_today_summary(
         message,
         app_context,
         user.id,
         message.from_user.id,
-        preferred_message_id=sent.message_id,
         notice=welcome_text,
     )
 
@@ -165,6 +158,28 @@ async def handle_menu_today_callback(
         await callback.message.answer(texts.start_required_text())
         return
     await _show_today_summary(callback.message, app_context, user.id, callback.from_user.id)
+
+
+@router.callback_query(MenuCallback.filter(F.action == "help"))
+async def handle_menu_help_callback(
+    callback: CallbackQuery,
+    app_context: AppContext,
+) -> None:
+    await callback.answer()
+    if callback.message is None or callback.from_user is None:
+        return
+    user = await _get_user_record(app_context, callback.from_user.id)
+    if user is None:
+        await callback.message.answer(texts.start_required_text())
+        return
+    await _render_screen(
+        callback.message,
+        app_context,
+        user.id,
+        screen="help",
+        text=texts.help_text(is_admin=app_context.access_service.is_admin(callback.from_user.id)),
+        preferred_message_id=callback.message.message_id,
+    )
 
 
 @router.callback_query(MenuCallback.filter(F.action == "pm"))
@@ -1814,6 +1829,12 @@ async def _get_user_record(app_context: AppContext, telegram_user_id: int):
         return await UserRepository(session).get_by_telegram_id(telegram_user_id)
 
 
+async def _is_admin_user(app_context: AppContext, user_id: str) -> bool:
+    async with app_context.db.session() as session:
+        user = await UserRepository(session).get_by_id(user_id)
+    return bool(user) and app_context.access_service.is_admin(user.telegram_user_id)
+
+
 def _work_date(app_context: AppContext) -> date:
     return today_local(app_context.settings.timezone_info)
 
@@ -1879,12 +1900,16 @@ async def _render_screen(
     reply_markup: InlineKeyboardMarkup | None = None,
     preferred_message_id: int | None = None,
 ) -> None:
+    navigation_markup = keyboards.with_main_menu(
+        reply_markup,
+        is_admin=await _is_admin_user(app_context, user_id),
+    )
     await render_private_screen(
         app_context=app_context,
         user_id=user_id,
         chat_id=message.chat.id,
         screen=screen,
         text=text,
-        reply_markup=reply_markup,
+        reply_markup=navigation_markup,
         preferred_message_id=preferred_message_id,
     )

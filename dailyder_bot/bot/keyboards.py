@@ -3,8 +3,6 @@ from __future__ import annotations
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
 )
 
 from dailyder_bot.bot.callbacks import (
@@ -28,18 +26,51 @@ MENU_ADMIN = "Admin panel"
 MENU_HOME = "Bosh menyu"
 
 
-def main_menu_keyboard(*, is_admin: bool) -> ReplyKeyboardMarkup:
+def _main_menu_rows(*, is_admin: bool) -> list[list[InlineKeyboardButton]]:
     rows = [
-        [KeyboardButton(text=MENU_TODAY), KeyboardButton(text=MENU_PM)],
-        [KeyboardButton(text=MENU_HELP)],
+        [
+            InlineKeyboardButton(
+                text=MENU_TODAY,
+                callback_data=MenuCallback(action="today").pack(),
+            ),
+            InlineKeyboardButton(
+                text=MENU_PM,
+                callback_data=MenuCallback(action="pm").pack(),
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=MENU_HELP,
+                callback_data=MenuCallback(action="help").pack(),
+            )
+        ],
     ]
     if is_admin:
-        rows.append([KeyboardButton(text=MENU_ADMIN)])
-    return ReplyKeyboardMarkup(
-        keyboard=rows,
-        resize_keyboard=True,
-        is_persistent=True,
-    )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=MENU_ADMIN,
+                    callback_data=MenuCallback(action="admin").pack(),
+                )
+            ]
+        )
+    return rows
+
+
+def main_menu_keyboard(*, is_admin: bool) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=_main_menu_rows(is_admin=is_admin))
+
+
+def with_main_menu(
+    reply_markup: InlineKeyboardMarkup | None,
+    *,
+    is_admin: bool,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if reply_markup is not None:
+        rows.extend(reply_markup.inline_keyboard)
+    rows.extend(_main_menu_rows(is_admin=is_admin))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def morning_shortcuts() -> InlineKeyboardMarkup:
@@ -357,37 +388,40 @@ def pm_resume_keyboard() -> InlineKeyboardMarkup:
 
 
 def admin_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Holat",
-                    callback_data=AdminActionCallback(action="readiness").pack(),
-                ),
-                InlineKeyboardButton(
-                    text="Pending",
-                    callback_data=AdminActionCallback(action="pending").pack(),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Metrikalar",
-                    callback_data=AdminActionCallback(action="metrics").pack(),
-                ),
-                InlineKeyboardButton(
-                    text="Developerlar",
-                    callback_data=AdminActionCallback(action="users").pack(),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="AM eslatma",
-                    callback_data=AdminActionCallback(action="remind_am").pack(),
-                ),
-                InlineKeyboardButton(
-                    text="PM eslatma",
-                    callback_data=AdminActionCallback(action="remind_pm").pack(),
-                ),
-            ],
-        ]
+    return with_main_menu(
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Holat",
+                        callback_data=AdminActionCallback(action="readiness").pack(),
+                    ),
+                    InlineKeyboardButton(
+                        text="Pending",
+                        callback_data=AdminActionCallback(action="pending").pack(),
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="Metrikalar",
+                        callback_data=AdminActionCallback(action="metrics").pack(),
+                    ),
+                    InlineKeyboardButton(
+                        text="Developerlar",
+                        callback_data=AdminActionCallback(action="users").pack(),
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="AM eslatma",
+                        callback_data=AdminActionCallback(action="remind_am").pack(),
+                    ),
+                    InlineKeyboardButton(
+                        text="PM eslatma",
+                        callback_data=AdminActionCallback(action="remind_pm").pack(),
+                    ),
+                ],
+            ]
+        ),
+        is_admin=True,
     )

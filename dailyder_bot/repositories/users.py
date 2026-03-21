@@ -14,6 +14,10 @@ class UserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def get_by_id(self, user_id: str) -> User | None:
+        result = await self.session.execute(select(User).where(User.id == user_id))
+        return result.scalar_one_or_none()
+
     async def get_by_telegram_id(self, telegram_user_id: int) -> User | None:
         result = await self.session.execute(
             select(User).where(User.telegram_user_id == telegram_user_id)
