@@ -31,6 +31,7 @@ async def render_private_screen(
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
     preferred_message_id: int | None = None,
+    include_last_message_candidate: bool = True,
 ) -> int:
     logger.info(
         "Render private screen requested",
@@ -39,6 +40,7 @@ async def render_private_screen(
             "user_id": user_id,
             "screen": screen,
             "preferred_message_id": preferred_message_id,
+            "include_last_message_candidate": include_last_message_candidate,
         },
     )
     now = local_now(app_context.settings.timezone_info)
@@ -53,7 +55,7 @@ async def render_private_screen(
     candidate_ids: list[int] = []
     if preferred_message_id is not None:
         candidate_ids.append(preferred_message_id)
-    if session_state and session_state.last_message_id is not None:
+    if include_last_message_candidate and session_state and session_state.last_message_id is not None:
         if session_state.last_message_id not in candidate_ids:
             candidate_ids.append(session_state.last_message_id)
 
@@ -67,6 +69,10 @@ async def render_private_screen(
                 reply_markup=reply_markup,
             )
             rendered_message_id = message_id
+            logger.info(
+                "Rendered private screen by editing existing message",
+                extra={"chat_id": chat_id, "message_id": message_id, "screen": screen},
+            )
             break
         except TelegramBadRequest as exc:
             error_text = str(exc).lower()
@@ -92,6 +98,10 @@ async def render_private_screen(
                         parse_mode=None,
                     )
                     rendered_message_id = message_id
+                    logger.info(
+                        "Rendered private screen by plain-text edit retry",
+                        extra={"chat_id": chat_id, "message_id": message_id, "screen": screen},
+                    )
                     break
                 except TelegramBadRequest as retry_exc:
                     logger.warning(
@@ -140,6 +150,10 @@ async def render_private_screen(
                 parse_mode=None,
             )
         rendered_message_id = sent.message_id
+        logger.info(
+            "Rendered private screen by sending new message",
+            extra={"chat_id": chat_id, "message_id": rendered_message_id, "screen": screen},
+        )
 
     await app_context.flow_session_service.set(
         user_id=user_id,

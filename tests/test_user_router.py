@@ -174,3 +174,31 @@ async def test_menu_help_callback_renders_help_screen(monkeypatch) -> None:
     assert render_calls[0]["user_id"] == "user-1"
     assert render_calls[0]["screen"] == "help"
     assert render_calls[0]["preferred_message_id"] == 55
+
+
+@pytest.mark.asyncio
+async def test_render_screen_user_message_forces_new_visible_message(monkeypatch) -> None:
+    message = _FakeMessage(user_id=9001, message_id=77)
+    render_calls: list[dict] = []
+
+    async def _fake_render_private_screen(**kwargs):
+        render_calls.append(kwargs)
+        return 777
+
+    monkeypatch.setattr(user_router, "render_private_screen", _fake_render_private_screen)
+
+    app_context = SimpleNamespace(
+        access_service=SimpleNamespace(is_admin=lambda telegram_user_id: False),
+    )
+
+    await user_router._render_screen(  # type: ignore[attr-defined]
+        message,
+        app_context,
+        "user-1",
+        screen="today_summary",
+        text="screen body",
+    )
+
+    assert render_calls
+    assert render_calls[0]["preferred_message_id"] is None
+    assert render_calls[0]["include_last_message_candidate"] is False

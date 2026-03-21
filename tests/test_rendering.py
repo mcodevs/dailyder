@@ -128,3 +128,28 @@ async def test_render_private_screen_falls_back_on_unexpected_bad_request() -> N
 
     assert message_id == 901
     assert bot.send_calls
+
+
+@pytest.mark.asyncio
+async def test_render_private_screen_can_skip_last_message_candidate() -> None:
+    flow_session_service = _FakeFlowSessionService(last_message_id=55)
+    bot = _FakeBot()
+
+    message_id = await render_private_screen(
+        app_context=_context(flow_session_service=flow_session_service, bot=bot),  # type: ignore[arg-type]
+        user_id="user-1",
+        chat_id=1001,
+        screen="today_summary",
+        text="Updated",
+        include_last_message_candidate=False,
+    )
+
+    assert message_id == 901
+    assert bot.edit_calls == []
+    assert bot.send_calls == [
+        {
+            "chat_id": 1001,
+            "text": "Updated",
+            "reply_markup": None,
+        }
+    ]

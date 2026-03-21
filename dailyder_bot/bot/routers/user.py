@@ -1912,6 +1912,12 @@ async def _render_screen(
     preferred_message_id: int | None = None,
 ) -> None:
     is_admin = message.chat.type == "private" and app_context.access_service.is_admin(message.chat.id)
+    is_user_message = bool(message.from_user) and message.from_user.id == message.chat.id
+    effective_preferred_message_id = preferred_message_id
+    include_last_message_candidate = True
+    if is_user_message and effective_preferred_message_id is None:
+        # User-typed commands should always produce a fresh visible message.
+        include_last_message_candidate = False
     navigation_markup = keyboards.with_main_menu(
         reply_markup,
         is_admin=is_admin,
@@ -1924,7 +1930,8 @@ async def _render_screen(
             screen=screen,
             text=text,
             reply_markup=navigation_markup,
-            preferred_message_id=preferred_message_id,
+            preferred_message_id=effective_preferred_message_id,
+            include_last_message_candidate=include_last_message_candidate,
         )
     except Exception:
         logger.exception(
