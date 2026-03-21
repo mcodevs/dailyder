@@ -287,7 +287,6 @@ def pm_item_detail_keyboard(
             InlineKeyboardButton(
                 text=f"{ItemStatus(current_status).emoji if current_status else '◻️'} Task status",
                 callback_data=PmTargetCallback(
-                    item_id=item.id,
                     target_type="item",
                     target_id=item.id,
                 ).pack(),
@@ -300,7 +299,6 @@ def pm_item_detail_keyboard(
                 InlineKeyboardButton(
                     text=f"{ItemStatus(subtask.status).emoji if subtask.status else '◻️'} {subtask.subtask_name}",
                     callback_data=PmTargetCallback(
-                        item_id=item.id,
                         target_type="subtask",
                         target_id=subtask.id,
                     ).pack(),
@@ -318,13 +316,12 @@ def pm_item_detail_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def pm_status_keyboard(*, item_id: str, target_type: str, target_id: str) -> InlineKeyboardMarkup:
+def pm_status_keyboard(*, target_type: str, target_id: str) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
                 text=f"{status.emoji} {status.label_uz}",
                 callback_data=PmStatusCallback(
-                    item_id=item_id,
                     target_type=target_type,
                     target_id=target_id,
                     status=status.value,

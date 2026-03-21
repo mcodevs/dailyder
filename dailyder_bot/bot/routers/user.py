@@ -1042,7 +1042,6 @@ async def handle_select_pm_target(
         app_context,
         user.id,
         callback.from_user.id,
-        item_id=callback_data.item_id,
         target_type=callback_data.target_type,
         target_id=callback_data.target_id,
         preferred_message_id=callback.message.message_id,
@@ -1062,9 +1061,40 @@ async def handle_pm_status_choice(
     if user is None:
         await callback.message.answer(texts.start_required_text())
         return
+    submission = await app_context.submission_service.get_submitted_today_submission(
+        callback.from_user.id,
+        _work_date(app_context),
+    )
+    if submission is None:
+        await _render_screen(
+            callback.message,
+            app_context,
+            user.id,
+            screen="pm_empty",
+            text=texts.pm_empty_text(),
+            preferred_message_id=callback.message.message_id,
+        )
+        return
+
+    item_id: str | None
+    if callback_data.target_type == "item":
+        item_id = callback_data.target_id if any(item.id == callback_data.target_id for item in submission.items) else None
+    else:
+        item_id, _ = _find_item_and_subtask_by_subtask_id(submission, callback_data.target_id)
+
+    if item_id is None:
+        await _show_pm_summary(
+            callback.message,
+            app_context,
+            user.id,
+            callback.from_user.id,
+            preferred_message_id=callback.message.message_id,
+        )
+        return
+
     if callback_data.target_type == "item":
         payload = await _load_pm_payload(app_context, user.id, callback.from_user.id)
-        payload["status_map"][callback_data.item_id] = callback_data.status
+        payload["status_map"][item_id] = callback_data.status
         await _set_flow(
             app_context,
             user_id=user.id,
@@ -1077,7 +1107,7 @@ async def handle_pm_status_choice(
         await app_context.submission_service.record_subtask_status(
             telegram_user_id=callback.from_user.id,
             work_date=_work_date(app_context),
-            item_id=callback_data.item_id,
+            item_id=item_id,
             subtask_id=callback_data.target_id,
             status=ItemStatus(callback_data.status),
         )
@@ -1086,7 +1116,7 @@ async def handle_pm_status_choice(
         app_context,
         user.id,
         callback.from_user.id,
-        callback_data.item_id,
+        item_id,
         preferred_message_id=callback.message.message_id,
     )
 
@@ -1610,7 +1640,6 @@ async def _show_pm_status_picker(
     user_id: str,
     telegram_user_id: int,
     *,
-    item_id: str,
     target_type: str,
     target_id: str,
     preferred_message_id: int | None = None,
@@ -1628,30 +1657,40 @@ async def _show_pm_status_picker(
             preferred_message_id=preferred_message_id,
         )
         return
-    item = next((entry for entry in submission.items if entry.id == item_id), None)
-    if item is None:
-        await _show_pm_summary(
-            message,
-            app_context,
-            user_id,
-            telegram_user_id,
-            preferred_message_id=preferred_message_id,
-        )
-        return
-
+    item_id: str | None
     if target_type == "item":
-        payload = await _load_pm_payload(app_context, user_id, telegram_user_id)
-        title = f"Task: {item.task_name}"
-        current_status = payload["status_map"].get(item.id)
-    else:
-        subtask = next((entry for entry in item.subtasks if entry.id == target_id), None)
-        if subtask is None:
-            await _show_pm_item_detail(
+        item_id = target_id
+        item = next((entry for entry in submission.items if entry.id == item_id), None)
+        if item is None:
+            await _show_pm_summary(
                 message,
                 app_context,
                 user_id,
                 telegram_user_id,
-                item_id,
+                preferred_message_id=preferred_message_id,
+            )
+            return
+        payload = await _load_pm_payload(app_context, user_id, telegram_user_id)
+        title = f"Task: {item.task_name}"
+        current_status = payload["status_map"].get(item.id)
+    else:
+        item_id, subtask = _find_item_and_subtask_by_subtask_id(submission, target_id)
+        if item_id is None or subtask is None:
+            await _show_pm_summary(
+                message,
+                app_context,
+                user_id,
+                telegram_user_id,
+                preferred_message_id=preferred_message_id,
+            )
+            return
+        item = next((entry for entry in submission.items if entry.id == item_id), None)
+        if item is None:
+            await _show_pm_summary(
+                message,
+                app_context,
+                user_id,
+                telegram_user_id,
                 preferred_message_id=preferred_message_id,
             )
             return
@@ -1665,12 +1704,19 @@ async def _show_pm_status_picker(
         screen="pm_status_picker",
         text=texts.pm_target_prompt(title=title, current_status=current_status),
         reply_markup=keyboards.pm_status_keyboard(
-            item_id=item.id,
             target_type=target_type,
             target_id=target_id,
         ),
         preferred_message_id=preferred_message_id,
     )
+
+
+def _find_item_and_subtask_by_subtask_id(submission: DailySubmission, subtask_id: str) -> tuple[str | None, object | None]:
+    for item in submission.items:
+        for subtask in item.subtasks:
+            if subtask.id == subtask_id:
+                return item.id, subtask
+    return None, None
 
 
 async def _resume_morning_prompt(

@@ -31,13 +31,11 @@ class PmItemCallback(CallbackData, prefix="pm_item"):
 
 
 class PmTargetCallback(CallbackData, prefix="pm_target"):
-    item_id: str
     target_type: str
     target_id: str
 
 
 class PmStatusCallback(CallbackData, prefix="pm_status"):
-    item_id: str
     target_type: str
     target_id: str
     status: str
