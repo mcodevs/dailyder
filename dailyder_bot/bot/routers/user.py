@@ -1964,9 +1964,11 @@ async def _render_screen(
     if is_user_message and effective_preferred_message_id is None:
         # User-typed commands should always produce a fresh visible message.
         include_last_message_candidate = False
+    settings = getattr(app_context, "settings", None)
     navigation_markup = keyboards.with_main_menu(
         reply_markup,
         is_admin=is_admin,
+        mini_app_url=getattr(settings, "mini_app_url", None),
     )
     try:
         await render_private_screen(

@@ -30,11 +30,50 @@ class UserMetricsSnapshot:
     admin_warnings_month: int = 0
 
 
+@dataclass(slots=True)
+class MetricsReportSnapshot:
+    start_date: date
+    end_date: date
+    days: int
+    users: list[UserMetricsSnapshot]
+
+
 class MetricsService:
     def __init__(self, db: DatabaseSessionManager) -> None:
         self.db = db
 
     async def build_report(self, as_of_date: date, timezone_info: ZoneInfo, days: int = 30) -> str:
+        snapshot = await self.build_snapshot(as_of_date, timezone_info, days)
+        lines = [
+            f"<b>Oxirgi {snapshot.days} kunlik metrikalar</b>",
+            f"Oraliq: {format_uz_date(snapshot.start_date)} - {format_uz_date(snapshot.end_date)}",
+        ]
+        if not snapshot.users:
+            lines.append("")
+            lines.append("Faol developerlar topilmadi.")
+            return "\n".join(lines)
+
+        for user_snapshot in snapshot.users:
+            lines.extend(
+                [
+                    "",
+                    user_mention_html(user_snapshot.user),
+                    (
+                        f"AM: {user_snapshot.am_submitted}/{user_snapshot.expected_workdays} | "
+                        f"Missed AM: {user_snapshot.missed_am}"
+                    ),
+                    f"PM: {user_snapshot.pm_submitted} | Missed PM: {user_snapshot.missed_pm}",
+                    (
+                        "Statuslar: "
+                        f"✅ {user_snapshot.completed} | ⚠️ {user_snapshot.warning} | "
+                        f"🚫 {user_snapshot.blocked} | 🪓 {user_snapshot.dropped}"
+                    ),
+                    f"Admin ogohlantirishlari (oy): {user_snapshot.admin_warnings_month}",
+                ]
+            )
+        return "\n".join(lines)
+
+    async def build_snapshot(self, as_of_date: date, timezone_info: ZoneInfo, days: int = 30) -> MetricsReportSnapshot:
         start_date = as_of_date - timedelta(days=days - 1)
         month_start = as_of_date.replace(day=1)
         next_month_start = (
@@ -55,35 +94,12 @@ class MetricsService:
         workdays = iter_workdays(start_date, as_of_date)
         warning_counts = Counter(warning.developer_user_id for warning in warnings)
         snapshots = self._build_snapshots(users, submissions, workdays, warning_counts)
-
-        lines = [
-            f"<b>Oxirgi {days} kunlik metrikalar</b>",
-            f"Oraliq: {format_uz_date(start_date)} - {format_uz_date(as_of_date)}",
-        ]
-        if not snapshots:
-            lines.append("")
-            lines.append("Faol developerlar topilmadi.")
-            return "\n".join(lines)
-
-        for snapshot in snapshots:
-            lines.extend(
-                [
-                    "",
-                    user_mention_html(snapshot.user),
-                    (
-                        f"AM: {snapshot.am_submitted}/{snapshot.expected_workdays} | "
-                        f"Missed AM: {snapshot.missed_am}"
-                    ),
-                    f"PM: {snapshot.pm_submitted} | Missed PM: {snapshot.missed_pm}",
-                    (
-                        "Statuslar: "
-                        f"✅ {snapshot.completed} | ⚠️ {snapshot.warning} | "
-                        f"🚫 {snapshot.blocked} | 🪓 {snapshot.dropped}"
-                    ),
-                    f"Admin ogohlantirishlari (oy): {snapshot.admin_warnings_month}",
-                ]
-            )
-        return "\n".join(lines)
+        return MetricsReportSnapshot(
+            start_date=start_date,
+            end_date=as_of_date,
+            days=days,
+            users=snapshots,
+        )
 
     def _build_snapshots(
         self,

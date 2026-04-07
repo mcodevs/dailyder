@@ -11,6 +11,13 @@ def _button_callbacks(markup) -> list[list[str | None]]:
     return [[button.callback_data for button in row] for row in markup.inline_keyboard]
 
 
+def _button_web_app_urls(markup) -> list[list[str | None]]:
+    return [
+        [button.web_app.url if button.web_app is not None else None for button in row]
+        for row in markup.inline_keyboard
+    ]
+
+
 def test_main_menu_keyboard_includes_top_level_sections() -> None:
     markup = keyboards.main_menu_keyboard(is_admin=False)
 
@@ -25,6 +32,20 @@ def test_main_menu_keyboard_includes_top_level_sections() -> None:
         ],
         [MenuCallback(action="help").pack()],
     ]
+
+
+def test_main_menu_keyboard_includes_mini_app_row_when_url_present() -> None:
+    markup = keyboards.main_menu_keyboard(
+        is_admin=False,
+        mini_app_url="https://mini.dailyder.uz",
+    )
+
+    assert _button_texts(markup) == [
+        [keyboards.MENU_TODAY, keyboards.MENU_PM],
+        [keyboards.MENU_HELP],
+        [keyboards.MENU_MINI_APP],
+    ]
+    assert _button_web_app_urls(markup)[-1] == ["https://mini.dailyder.uz"]
 
 
 def test_with_main_menu_appends_navigation_rows_and_admin_button() -> None:

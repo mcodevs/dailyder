@@ -2,6 +2,8 @@
 
 `Dailyder Bot` is a production-oriented Telegram bot for collecting morning daily plans and evening status updates from a mobile team.
 
+The repository now also exposes a Mini App API for the sibling Flutter Web frontend at `/Users/udevs/StudioProjects/dailyder_frontend`.
+
 ## Stack
 
 - Python 3.12
@@ -18,6 +20,7 @@
 - `17:00` on workdays: send PM digest to the group and private reminders for status updates.
 - Developers update each morning task with `✅ / ⚠️ / 🚫 / 🪓` and an optional final note.
 - Admins manage binding, reminders, pending users, and metrics directly from Telegram.
+- The backend also serves authenticated JSON APIs under `/api/v1/...` for the Telegram Mini App and browser dev mode.
 
 ## Local run
 
@@ -41,6 +44,13 @@ python -m dailyder_bot.db.migrate
 
 ```bash
 python -m dailyder_bot
+```
+
+5. Run the Flutter Web frontend from the sibling repo when needed:
+
+```bash
+cd ../dailyder_frontend
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8080 --dart-define=DEV_AUTH_ENABLED=true
 ```
 
 ## Telegram setup
@@ -80,6 +90,7 @@ fly status
 - Application logs go to stdout/stderr. Use `fly logs -a dailyder-bot` for live inspection and `fly logs -a dailyder-bot -n 200` for recent history.
 - If the bot stops answering, check this order: health check status, Postgres connectivity, bot token validity, then Telegram rate limits.
 - Keep `BOT_TOKEN`, `DATABASE_URL`, `ADMIN_USER_IDS`, `TIMEZONE`, `HASHTAG`, `AM_REMINDER_TIME`, `PM_REMINDER_TIME`, and `PORT` aligned across environments.
+- Mini App environments also need `MINI_APP_URL`, `WEB_ALLOWED_ORIGINS`, `DEV_AUTH_ENABLED`, `API_TOKEN_SECRET`, `API_TOKEN_TTL_MINUTES`, `TELEGRAM_INIT_DATA_TTL_SECONDS`, and `BIND_INTENT_TTL_MINUTES`.
 - After schema changes, verify the release command completed successfully before promoting traffic or scaling the machine back up.
 
 ## Notes

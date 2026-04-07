@@ -25,6 +25,22 @@ class IssuedWarning:
     warning: DeveloperWarning
 
 
+@dataclass(slots=True)
+class ReadinessSnapshot:
+    binding: object | None
+    admin_count: int
+    onboarded_user_count: int
+    am_scheduler: str
+    pm_scheduler: str
+
+
+@dataclass(slots=True)
+class PendingSnapshot:
+    work_date: date
+    am_pending_users: list[User]
+    pm_pending_users: list[User]
+
+
 class AdminService:
     def __init__(
         self,
@@ -67,6 +83,25 @@ class AdminService:
                 )
 
     async def readiness_report(self) -> str:
+        snapshot = await self.readiness_snapshot()
+        binding = snapshot.binding
+        lines = [
+            "<b>Bot holati</b>",
+            f"Group binding: {'bor' if binding else 'yoʻq'}",
+            f"Guruh: {binding.title or binding.chat_id if binding else 'biriktirilmagan'}",
+            (
+                f"Topic: {binding.message_thread_id}"
+                if binding and binding.message_thread_id is not None
+                else "Topic: butun guruh"
+            ),
+            f"Adminlar: {snapshot.admin_count} ta",
+            f"Onboarded developerlar: {snapshot.onboarded_user_count} ta",
+            f"AM scheduler: {snapshot.am_scheduler}",
+            f"PM scheduler: {snapshot.pm_scheduler}",
+        ]
+        return "\n".join(lines)
+
+    async def readiness_snapshot(self) -> ReadinessSnapshot:
         async with self.db.session() as session:
             settings_repo = AppSettingsRepository(session)
             user_repo = UserRepository(session)
@@ -77,44 +112,21 @@ class AdminService:
                 binding = GroupBinding(chat_id=self.settings.group_chat_id, title=None, message_thread_id=None)
             user_count = await user_repo.count_active()
 
-        lines = [
-            "<b>Bot holati</b>",
-            f"Group binding: {'bor' if binding else 'yoʻq'}",
-            f"Guruh: {binding.title or binding.chat_id if binding else 'biriktirilmagan'}",
-            (
-                f"Topic: {binding.message_thread_id}"
-                if binding and binding.message_thread_id is not None
-                else "Topic: butun guruh"
-            ),
-            f"Adminlar: {len(self.settings.admin_user_ids)} ta",
-            f"Onboarded developerlar: {user_count} ta",
-            f"AM scheduler: {self.settings.am_reminder_time}",
-            f"PM scheduler: {self.settings.pm_reminder_time}",
-        ]
-        return "\n".join(lines)
+        return ReadinessSnapshot(
+            binding=binding,
+            admin_count=len(self.settings.admin_user_ids),
+            onboarded_user_count=user_count,
+            am_scheduler=self.settings.am_reminder_time,
+            pm_scheduler=self.settings.pm_reminder_time,
+        )
 
     async def pending_report(self, work_date: date) -> str:
-        async with self.db.session() as session:
-            user_repo = UserRepository(session)
-            submission_repo = SubmissionRepository(session)
-            users = await user_repo.list_active()
-            submissions = await submission_repo.list_for_window(work_date, work_date)
-
-        submission_lookup = {submission.user.telegram_user_id: submission for submission in submissions}
-        am_pending: list[str] = []
-        pm_pending: list[str] = []
-
-        for user in users:
-            submission = submission_lookup.get(user.telegram_user_id)
-            if submission is None or submission.am_submitted_at is None:
-                am_pending.append(user_mention_html(user))
-                continue
-            if submission.pm_submitted_at is None:
-                pm_pending.append(user_mention_html(user))
-
+        snapshot = await self.pending_snapshot(work_date)
+        am_pending = [user_mention_html(user) for user in snapshot.am_pending_users]
+        pm_pending = [user_mention_html(user) for user in snapshot.pm_pending_users]
         return "\n".join(
             [
-                f"<b>Pending holat — {format_uz_date(work_date)}</b>",
+                f"<b>Pending holat — {format_uz_date(snapshot.work_date)}</b>",
                 "",
                 "AM pending:",
                 "\n".join(am_pending) if am_pending else "Yo'q",
@@ -122,6 +134,31 @@ class AdminService:
                 "PM pending:",
                 "\n".join(pm_pending) if pm_pending else "Yo'q",
             ]
+        )
+
+    async def pending_snapshot(self, work_date: date) -> PendingSnapshot:
+        async with self.db.session() as session:
+            user_repo = UserRepository(session)
+            submission_repo = SubmissionRepository(session)
+            users = await user_repo.list_active()
+            submissions = await submission_repo.list_for_window(work_date, work_date)
+
+        submission_lookup = {submission.user.telegram_user_id: submission for submission in submissions}
+        am_pending_users: list[User] = []
+        pm_pending_users: list[User] = []
+
+        for user in users:
+            submission = submission_lookup.get(user.telegram_user_id)
+            if submission is None or submission.am_submitted_at is None:
+                am_pending_users.append(user)
+                continue
+            if submission.pm_submitted_at is None:
+                pm_pending_users.append(user)
+
+        return PendingSnapshot(
+            work_date=work_date,
+            am_pending_users=am_pending_users,
+            pm_pending_users=pm_pending_users,
         )
 
     async def metrics_report(self, as_of_date: date) -> str:
@@ -132,9 +169,7 @@ class AdminService:
         )
 
     async def onboarded_users_report(self) -> str:
-        async with self.db.session() as session:
-            users = await UserRepository(session).list_active()
-
+        users = await self.list_onboarded_users()
         lines = ["<b>Onboarded developerlar</b>"]
         if not users:
             lines.append("")
@@ -147,6 +182,10 @@ class AdminService:
                 f"{user_mention_html(user)} | joined: {format_uz_date(user.joined_at.date())}"
             )
         return "\n".join(lines)
+
+    async def list_onboarded_users(self) -> list[User]:
+        async with self.db.session() as session:
+            return await UserRepository(session).list_active()
 
     async def resend_missing(self, period: str, work_date: date, admin_user_id: int, now: datetime) -> int:
         async with self.db.session() as session:

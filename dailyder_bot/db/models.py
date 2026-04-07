@@ -200,3 +200,13 @@ class DeveloperWarning(Base, TimestampMixin):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
 
     developer: Mapped["User"] = relationship(back_populates="warnings")
+
+
+class GroupBindingIntent(Base, TimestampMixin):
+    __tablename__ = "group_binding_intents"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    admin_telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

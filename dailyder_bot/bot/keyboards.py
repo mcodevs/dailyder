@@ -3,6 +3,7 @@ from __future__ import annotations
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    WebAppInfo,
 )
 
 from dailyder_bot.bot.callbacks import (
@@ -22,11 +23,25 @@ from dailyder_bot.domain.enums import ItemStatus
 MENU_TODAY = "Bugungi tasklar"
 MENU_PM = "PM update"
 MENU_HELP = "Yordam"
+MENU_MINI_APP = "Mini App"
 MENU_ADMIN = "Admin panel"
 MENU_HOME = "Bosh menyu"
 
 
-def _main_menu_rows(*, is_admin: bool) -> list[list[InlineKeyboardButton]]:
+def build_mini_app_rows(*, mini_app_url: str | None) -> list[list[InlineKeyboardButton]]:
+    if not mini_app_url:
+        return []
+    return [
+        [
+            InlineKeyboardButton(
+                text=MENU_MINI_APP,
+                web_app=WebAppInfo(url=mini_app_url),
+            )
+        ]
+    ]
+
+
+def _main_menu_rows(*, is_admin: bool, mini_app_url: str | None = None) -> list[list[InlineKeyboardButton]]:
     rows = [
         [
             InlineKeyboardButton(
@@ -45,6 +60,7 @@ def _main_menu_rows(*, is_admin: bool) -> list[list[InlineKeyboardButton]]:
             )
         ],
     ]
+    rows.extend(build_mini_app_rows(mini_app_url=mini_app_url))
     if is_admin:
         rows.append(
             [
@@ -57,46 +73,61 @@ def _main_menu_rows(*, is_admin: bool) -> list[list[InlineKeyboardButton]]:
     return rows
 
 
-def main_menu_keyboard(*, is_admin: bool) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=_main_menu_rows(is_admin=is_admin))
+def main_menu_keyboard(*, is_admin: bool, mini_app_url: str | None = None) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=_main_menu_rows(
+            is_admin=is_admin,
+            mini_app_url=mini_app_url,
+        )
+    )
 
 
 def with_main_menu(
     reply_markup: InlineKeyboardMarkup | None,
     *,
     is_admin: bool,
+    mini_app_url: str | None = None,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if reply_markup is not None:
         rows.extend(reply_markup.inline_keyboard)
-    rows.extend(_main_menu_rows(is_admin=is_admin))
+    rows.extend(
+        _main_menu_rows(
+            is_admin=is_admin,
+            mini_app_url=mini_app_url,
+        )
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def morning_shortcuts() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Bugungi vazifani yuborish",
-                    callback_data=MenuCallback(action="today").pack(),
-                )
-            ]
+def morning_shortcuts(*, mini_app_url: str | None = None) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="Bugungi vazifani yuborish",
+                callback_data=MenuCallback(action="today").pack(),
+            )
         ]
-    )
+    ]
+    rows.extend(build_mini_app_rows(mini_app_url=mini_app_url))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def pm_shortcuts(*, has_submission: bool) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Statuslarni yangilash" if has_submission else "Avval vazifani yuborish",
-                    callback_data=MenuCallback(action="pm" if has_submission else "today").pack(),
-                )
-            ]
+def pm_shortcuts(
+    *,
+    has_submission: bool,
+    mini_app_url: str | None = None,
+) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="Statuslarni yangilash" if has_submission else "Avval vazifani yuborish",
+                callback_data=MenuCallback(action="pm" if has_submission else "today").pack(),
+            )
         ]
-    )
+    ]
+    rows.extend(build_mini_app_rows(mini_app_url=mini_app_url))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def today_summary_keyboard(*, has_items: bool) -> InlineKeyboardMarkup:
@@ -384,7 +415,7 @@ def pm_resume_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def admin_menu_keyboard() -> InlineKeyboardMarkup:
+def admin_menu_keyboard(*, mini_app_url: str | None = None) -> InlineKeyboardMarkup:
     return with_main_menu(
         InlineKeyboardMarkup(
             inline_keyboard=[
@@ -421,4 +452,5 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             ]
         ),
         is_admin=True,
+        mini_app_url=mini_app_url,
     )

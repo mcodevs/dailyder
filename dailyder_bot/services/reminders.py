@@ -39,6 +39,7 @@ class ReminderService:
 
     async def send_morning_reminders(self, work_date: date, only_user_ids: set[int] | None = None) -> int:
         group_chat_id = await self.access_service.require_bound_group_id()
+        mini_app_url = getattr(self.settings, "mini_app_url", None)
         async with self.db.session() as session:
             users = await UserRepository(session).list_active()
 
@@ -48,7 +49,9 @@ class ReminderService:
             await self.bot.send_message(
                 chat_id=user.telegram_user_id,
                 text=texts.morning_reminder_text(work_date, self.settings.hashtag, user_mention_html(user)),
-                reply_markup=keyboards.morning_shortcuts(),
+                reply_markup=keyboards.morning_shortcuts(
+                    mini_app_url=mini_app_url,
+                ),
             )
             return True
 
@@ -56,6 +59,7 @@ class ReminderService:
 
     async def send_pm_reminders(self, work_date: date, only_user_ids: set[int] | None = None) -> int:
         group_chat_id = await self.access_service.require_bound_group_id()
+        mini_app_url = getattr(self.settings, "mini_app_url", None)
         async with self.db.session() as session:
             users = await UserRepository(session).list_active()
         eligible_user_ids = [
@@ -79,6 +83,7 @@ class ReminderService:
                 ),
                 reply_markup=keyboards.pm_shortcuts(
                     has_submission=user.telegram_user_id in submission_map,
+                    mini_app_url=mini_app_url,
                 ),
             )
             return True

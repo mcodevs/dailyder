@@ -1,1 +1,1 @@
-"""HTTP health server package."""
+"""HTTP server package for health and Mini App APIs."""

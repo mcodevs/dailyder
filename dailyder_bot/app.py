@@ -16,10 +16,11 @@ from dailyder_bot.services.access import AccessService
 from dailyder_bot.services.admin import AdminService
 from dailyder_bot.services.digest import DigestService
 from dailyder_bot.services.flow_sessions import FlowSessionService
+from dailyder_bot.services.group_binding import GroupBindingIntentService
 from dailyder_bot.services.metrics import MetricsService
 from dailyder_bot.services.reminders import ReminderService
 from dailyder_bot.services.submissions import SubmissionService
-from dailyder_bot.web.health import HealthServer
+from dailyder_bot.web.server import WebServer
 
 
 class DailyderApplication:
@@ -35,6 +36,7 @@ class DailyderApplication:
         parser = MorningSubmissionParser()
         access_service = AccessService(self.settings, self.db)
         flow_session_service = FlowSessionService(self.db)
+        group_binding_intent_service = GroupBindingIntentService(self.settings, self.db)
         submission_service = SubmissionService(self.settings, self.db, parser)
         digest_service = DigestService(self.settings, self.db, self.bot, access_service)
         metrics_service = MetricsService(self.db)
@@ -58,6 +60,7 @@ class DailyderApplication:
             bot=self.bot,
             access_service=access_service,
             flow_session_service=flow_session_service,
+            group_binding_intent_service=group_binding_intent_service,
             submission_service=submission_service,
             digest_service=digest_service,
             reminder_service=reminder_service,
@@ -66,17 +69,17 @@ class DailyderApplication:
         )
         register_routers(self.dispatcher)
         self.scheduler = ReminderScheduler(self.context)
-        self.health_server = HealthServer(self.db, self.settings.port)
+        self.web_server = WebServer(self.context, self.settings.port)
 
     async def run(self) -> None:
         await apply_migrations(self.settings.database_url)
-        await self.health_server.start()
+        await self.web_server.start()
         self.scheduler.start()
         await self.scheduler.run_startup_recovery()
         try:
             await self.dispatcher.start_polling(self.bot, app_context=self.context)
         finally:
             await self.scheduler.stop()
-            await self.health_server.stop()
+            await self.web_server.stop()
             await self.bot.session.close()
             await self.db.dispose()

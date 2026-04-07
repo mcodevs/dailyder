@@ -28,11 +28,33 @@ _EDIT_FALLBACK_ERRORS = (
 )
 
 
+def get_mini_app_url(app_context: AppContext) -> str | None:
+    settings = getattr(app_context, "settings", None)
+    return getattr(settings, "mini_app_url", None)
+
+
 @router.message(Command("bind_group"), F.chat.type.in_({"group", "supergroup"}))
-async def handle_bind_group(message: Message, app_context: AppContext) -> None:
+async def handle_bind_group(
+    message: Message,
+    command: CommandObject,
+    app_context: AppContext,
+) -> None:
     if message.from_user is None or not app_context.access_service.is_admin(message.from_user.id):
         await message.reply(texts.admin_only_text())
         return
+
+    binding_token = (command.args or "").strip() if command is not None else ""
+    if binding_token:
+        try:
+            await app_context.group_binding_intent_service.consume_intent(
+                token=binding_token,
+                admin_telegram_user_id=message.from_user.id,
+                now=local_now(app_context.settings.timezone_info),
+            )
+        except ValueError as exc:
+            await message.reply(str(exc))
+            return
+
     await app_context.admin_service.bind_group_with_topic(
         admin_user_id=message.from_user.id,
         chat_id=message.chat.id,
@@ -59,7 +81,12 @@ async def handle_admin_menu(message: Message, app_context: AppContext) -> None:
         return
     user_id = await _get_private_user_id(app_context, message)
     if user_id is None:
-        await message.answer(texts.admin_menu_text(), reply_markup=keyboards.admin_menu_keyboard())
+        await message.answer(
+            texts.admin_menu_text(),
+            reply_markup=keyboards.admin_menu_keyboard(
+                mini_app_url=get_mini_app_url(app_context),
+            ),
+        )
         return
     await render_private_screen(
         app_context=app_context,
@@ -67,7 +94,9 @@ async def handle_admin_menu(message: Message, app_context: AppContext) -> None:
         chat_id=message.chat.id,
         screen="admin_menu",
         text=texts.admin_menu_text(),
-        reply_markup=keyboards.admin_menu_keyboard(),
+        reply_markup=keyboards.admin_menu_keyboard(
+            mini_app_url=get_mini_app_url(app_context),
+        ),
     )
 
 
@@ -85,7 +114,12 @@ async def handle_menu_admin_callback(
         return
     user_id = await _get_private_user_id_by_telegram_id(app_context, callback.from_user.id)
     if user_id is None:
-        await callback.message.answer(texts.admin_menu_text(), reply_markup=keyboards.admin_menu_keyboard())
+        await callback.message.answer(
+            texts.admin_menu_text(),
+            reply_markup=keyboards.admin_menu_keyboard(
+                mini_app_url=get_mini_app_url(app_context),
+            ),
+        )
         return
     await render_private_screen(
         app_context=app_context,
@@ -93,7 +127,9 @@ async def handle_menu_admin_callback(
         chat_id=callback.message.chat.id,
         screen="admin_menu",
         text=texts.admin_menu_text(),
-        reply_markup=keyboards.admin_menu_keyboard(),
+        reply_markup=keyboards.admin_menu_keyboard(
+            mini_app_url=get_mini_app_url(app_context),
+        ),
         preferred_message_id=callback.message.message_id,
     )
 
@@ -114,7 +150,9 @@ async def handle_pending(message: Message, app_context: AppContext) -> None:
                 chat_id=message.chat.id,
                 screen="admin_pending",
                 text=report,
-                reply_markup=keyboards.admin_menu_keyboard(),
+                reply_markup=keyboards.admin_menu_keyboard(
+                    mini_app_url=get_mini_app_url(app_context),
+                ),
             )
             return
     await message.answer(report)
@@ -273,7 +311,9 @@ async def handle_metrics(message: Message, app_context: AppContext) -> None:
         chat_id=message.chat.id,
         screen="admin_metrics",
         text=report,
-        reply_markup=keyboards.admin_menu_keyboard(),
+        reply_markup=keyboards.admin_menu_keyboard(
+            mini_app_url=get_mini_app_url(app_context),
+        ),
     )
 
 
@@ -307,7 +347,9 @@ async def handle_remind_missing(
         chat_id=message.chat.id,
         screen=f"admin_remind_{period}",
         text=notice,
-        reply_markup=keyboards.admin_menu_keyboard(),
+        reply_markup=keyboards.admin_menu_keyboard(
+            mini_app_url=get_mini_app_url(app_context),
+        ),
     )
 
 
@@ -336,7 +378,9 @@ async def handle_admin_actions(
         else None
     )
     if user_id is None:
-        admin_menu = keyboards.admin_menu_keyboard()
+        admin_menu = keyboards.admin_menu_keyboard(
+            mini_app_url=get_mini_app_url(app_context),
+        )
         if callback_data.action == "readiness":
             await _edit_or_send_private_callback(callback.message, await app_context.admin_service.readiness_report(), admin_menu)
         elif callback_data.action == "pending":
@@ -370,7 +414,9 @@ async def handle_admin_actions(
             chat_id=callback.message.chat.id,
             screen="admin_readiness",
             text=await app_context.admin_service.readiness_report(),
-            reply_markup=keyboards.admin_menu_keyboard(),
+            reply_markup=keyboards.admin_menu_keyboard(
+                mini_app_url=get_mini_app_url(app_context),
+            ),
             preferred_message_id=callback.message.message_id,
         )
     elif callback_data.action == "pending":
@@ -380,7 +426,9 @@ async def handle_admin_actions(
             chat_id=callback.message.chat.id,
             screen="admin_pending",
             text=await app_context.admin_service.pending_report(today),
-            reply_markup=keyboards.admin_menu_keyboard(),
+            reply_markup=keyboards.admin_menu_keyboard(
+                mini_app_url=get_mini_app_url(app_context),
+            ),
             preferred_message_id=callback.message.message_id,
         )
     elif callback_data.action == "metrics":
@@ -390,7 +438,9 @@ async def handle_admin_actions(
             chat_id=callback.message.chat.id,
             screen="admin_metrics",
             text=await app_context.admin_service.metrics_report(today),
-            reply_markup=keyboards.admin_menu_keyboard(),
+            reply_markup=keyboards.admin_menu_keyboard(
+                mini_app_url=get_mini_app_url(app_context),
+            ),
             preferred_message_id=callback.message.message_id,
         )
     elif callback_data.action == "users":
@@ -400,7 +450,9 @@ async def handle_admin_actions(
             chat_id=callback.message.chat.id,
             screen="admin_users",
             text=await app_context.admin_service.onboarded_users_report(),
-            reply_markup=keyboards.admin_menu_keyboard(),
+            reply_markup=keyboards.admin_menu_keyboard(
+                mini_app_url=get_mini_app_url(app_context),
+            ),
             preferred_message_id=callback.message.message_id,
         )
     elif callback_data.action == "remind_am":
@@ -416,7 +468,9 @@ async def handle_admin_actions(
             chat_id=callback.message.chat.id,
             screen="admin_remind_am",
             text=f"{sent_count} ta developerga AM eslatma yuborildi.",
-            reply_markup=keyboards.admin_menu_keyboard(),
+            reply_markup=keyboards.admin_menu_keyboard(
+                mini_app_url=get_mini_app_url(app_context),
+            ),
             preferred_message_id=callback.message.message_id,
         )
     elif callback_data.action == "remind_pm":
@@ -432,7 +486,9 @@ async def handle_admin_actions(
             chat_id=callback.message.chat.id,
             screen="admin_remind_pm",
             text=f"{sent_count} ta developerga PM eslatma yuborildi.",
-            reply_markup=keyboards.admin_menu_keyboard(),
+            reply_markup=keyboards.admin_menu_keyboard(
+                mini_app_url=get_mini_app_url(app_context),
+            ),
             preferred_message_id=callback.message.message_id,
         )
 
