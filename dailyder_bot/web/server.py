@@ -518,11 +518,20 @@ async def parse_json_body(request: web.Request) -> dict:
 def resolve_allowed_origin(*, configured_value: str, request_origin: str | None) -> str | None:
     if not request_origin:
         return "*"
-    normalized = [item.strip() for item in configured_value.split(",") if item.strip()]
+
+    def normalize_origin(value: str) -> str:
+        return value.strip().rstrip("/")
+
+    normalized_request_origin = normalize_origin(request_origin)
+    normalized = [
+        normalize_origin(item)
+        for item in configured_value.split(",")
+        if item.strip()
+    ]
     if not normalized or configured_value.strip() == "*":
         return "*"
-    if request_origin in normalized:
-        return request_origin
+    if normalized_request_origin in normalized:
+        return normalized_request_origin
     return None
 
 
